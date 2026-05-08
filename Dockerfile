@@ -1,4 +1,4 @@
-FROM node:20-slim AS frontend-build
+FROM node:20.19-slim AS frontend-build
 
 ARG APP_VERSION=""
 ENV APP_VERSION=$APP_VERSION
@@ -10,7 +10,7 @@ RUN npm ci
 COPY frontend/ ./
 RUN npm run build
 
-FROM python:3.11-slim
+FROM python:3.11.15-slim-bookworm
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1

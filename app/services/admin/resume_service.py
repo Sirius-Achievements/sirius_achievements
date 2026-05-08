@@ -63,10 +63,7 @@ async def _ocr_via_service(file_bytes: bytes, filename: str) -> str:
     url = f"{settings.AI_SERVICE_URL.rstrip('/')}/ocr"
     try:
         async with httpx.AsyncClient(timeout=settings.AI_SERVICE_TIMEOUT) as client:
-            response = await client.post(
-                url,
-                files={"file": (filename, file_bytes)},
-            )
+            response = await client.post(url, files={"file": (filename, file_bytes)})
             response.raise_for_status()
             payload = response.json()
             return sanitize_resume_text(str(payload.get("text", "")), max_length=OCR_TEXT_LIMIT)
@@ -94,7 +91,7 @@ class ResumeService:
         approved_count = (await self.db.execute(count_stmt)).scalar() or 0
 
         if approved_count == 0:
-            return {"allowed": False, "reason": "Нет подтверждённых достижений."}
+            return {"allowed": False, "reason": "Нет подтвержденных достижений."}
 
         if not user.resume_generated_at:
             return {"allowed": True, "reason": None}
@@ -109,7 +106,7 @@ class ResumeService:
         if new_count == 0:
             return {
                 "allowed": False,
-                "reason": "Нет новых подтверждённых документов с момента последней генерации.",
+                "reason": "Нет новых подтвержденных документов с момента последней генерации.",
             }
 
         return {"allowed": True, "reason": None}
@@ -149,15 +146,11 @@ class ResumeService:
             if not achievements:
                 return {
                     "success": False,
-                    "error": "Нет подтверждённых достижений для генерации.",
+                    "error": "Нет подтвержденных достижений для генерации.",
                     "status_code": 429,
                 }
 
-            student_name = sanitize_resume_text(
-                f"{user.first_name or ''} {user.last_name or ''}".strip(),
-                max_length=200,
-            ) or "Пользователь"
-
+            student_meta = self._build_student_meta(user)
             docs_data: list[dict[str, object]] = []
 
             for achievement in achievements:
@@ -169,12 +162,12 @@ class ResumeService:
 
             resume_result: str | None = None
             if self._is_external_ai_configured():
-                combined_text = self._build_combined_text(student_name, docs_data)
+                combined_text = self._build_combined_text(student_meta, docs_data)
                 if combined_text:
-                    resume_result = await self._call_yandex_gpt(combined_text, student_name)
+                    resume_result = await self._call_yandex_gpt(combined_text, student_meta)
 
             if not resume_result:
-                resume_result = self._generate_local_resume(student_name, user, docs_data)
+                resume_result = self._generate_local_resume(student_meta["full_name"], user, docs_data)
 
             resume_result = sanitize_resume_text(resume_result, max_length=RESUME_TEXT_LIMIT)
             if not resume_result:
@@ -199,6 +192,27 @@ class ResumeService:
                 "status_code": 500,
             }
 
+    def _build_student_meta(self, user: Users) -> dict[str, str]:
+        full_name = sanitize_resume_text(
+            f"{getattr(user, 'last_name', '') or ''} {getattr(user, 'first_name', '') or ''}".strip(),
+            max_length=200,
+        ) or "Студент"
+
+        education_value = _enum_value(getattr(user, "education_level", None), "")
+        course_value = str(getattr(user, "course", "") or "")
+        group_value = sanitize_resume_text(getattr(user, "study_group", "") or "", max_length=64)
+        gpa_value = sanitize_resume_text(getattr(user, "session_gpa", "") or "", max_length=16)
+
+        return {
+            "full_name": full_name,
+            "course": course_value or "-",
+            "group": group_value or "-",
+            "specialty": settings.RESUME_SPECIALTY_DEFAULT if not education_value else education_value,
+            "qualification": settings.RESUME_QUALIFICATION_DEFAULT,
+            "gpa": gpa_value or "-",
+            "supervisor": settings.RESUME_SUPERVISOR,
+        }
+
     def _build_document_data(self, achievement: Achievement) -> dict[str, object]:
         title = sanitize_resume_text(achievement.title or "Без названия", max_length=200) or "Без названия"
         description = sanitize_resume_text(achievement.description or "", max_length=1200)
@@ -207,6 +221,7 @@ class ResumeService:
             "title": title,
             "category": _enum_value(achievement.category, "Другое"),
             "level": _enum_value(achievement.level, "Не указан"),
+            "result": _enum_value(getattr(achievement, "result", None), ""),
             "description": description,
             "points": int(achievement.points or 0),
             "date": achievement.created_at.strftime("%d.%m.%Y") if achievement.created_at else "",
@@ -253,14 +268,25 @@ class ResumeService:
         has_placeholders = api_key.lower().startswith("your") or folder_id.lower().startswith("your")
         return bool(settings.RESUME_EXTERNAL_AI_ENABLED and api_key and folder_id and not has_placeholders)
 
-    def _build_combined_text(self, student_name: str, docs_data: list[dict[str, object]]) -> str:
-        parts = [f"Студент: {student_name}"]
+    def _build_combined_text(self, student_meta: dict[str, str], docs_data: list[dict[str, object]]) -> str:
+        parts = [
+            "Данные студента:",
+            f"ФИО: {student_meta['full_name']}",
+            f"Курс: {student_meta['course']}",
+            f"Группа: {student_meta['group']}",
+            f"Специальность: {student_meta['specialty']}",
+            f"Квалификация: {student_meta['qualification']}",
+            f"Средний балл: {student_meta['gpa']}",
+            f"Научный руководитель: {student_meta['supervisor']}",
+        ]
 
         for document in docs_data:
-            parts.append("--- Документ ---")
+            parts.append("\n--- Подтвержденный документ ---")
             parts.append(f"Название: {document['title']}")
             parts.append(f"Категория: {document['category']}")
             parts.append(f"Уровень: {document['level']}")
+            if document.get("result"):
+                parts.append(f"Результат: {document['result']}")
 
             description = sanitize_resume_text(str(document.get("description", "")), max_length=800)
             if description:
@@ -268,38 +294,40 @@ class ResumeService:
 
             ocr_text = sanitize_resume_text(str(document.get("ocr_text", "")), max_length=1200)
             if ocr_text:
-                parts.append(f"Распознанный текст: {ocr_text}")
+                parts.append(f"Распознанный текст документа: {ocr_text}")
 
         return sanitize_resume_text("\n".join(parts), max_length=PROMPT_TEXT_LIMIT)
 
-    async def _call_yandex_gpt(self, combined_text: str, target_name: str) -> str | None:
+    async def _call_yandex_gpt(self, combined_text: str, student_meta: dict[str, str]) -> str | None:
         api_key = settings.YANDEX_API_KEY
         folder_id = settings.YANDEX_FOLDER_ID
         if not api_key or not folder_id:
             return None
 
+        system_prompt = (
+            "Ты составляешь официальную характеристику-рекомендацию студента на русском языке. "
+            "Используй стиль и структуру образца: заголовок 'ХАРАКТЕРИСТИКА-РЕКОМЕНДАЦИЯ', затем поля "
+            "ФИО студента, курс и группа, специальность, квалификация, средний балл. Далее 2-4 абзаца "
+            "о качествах студента и его подтвержденных достижениях. После этого добавь список наиболее "
+            "значимых достижений и строку 'Научный руководитель ...'. "
+            "Не выдумывай факты, даты, должности, публикации или победы. Если данных мало, пиши нейтрально. "
+            "Не называй текст коммерческим резюме, CV или анкетой."
+        )
+        user_prompt = (
+            "Составь характеристику-рекомендацию строго по шаблону. "
+            "ФИО, курс, группа, специальность, квалификация, средний балл и научного руководителя бери из данных ниже. "
+            f"\n\n{combined_text}"
+        )
         prompt = {
             "modelUri": f"gpt://{folder_id}/yandexgpt",
             "completionOptions": {
                 "stream": False,
-                "temperature": 0.1,
-                "maxTokens": "1000",
+                "temperature": 0.15,
+                "maxTokens": "1800",
             },
             "messages": [
-                {
-                    "role": "system",
-                    "text": (
-                        f"Ты строгий HR-специалист. Составь краткое профессиональное резюме для {target_name}. "
-                        "Игнорируй имена других людей в тексте документов. "
-                        "Собери достижения, определи сильные стороны и направления развития. "
-                        "Напиши связный текст от третьего лица в 4-6 предложениях. "
-                        "Не выводи сырой текст документов."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "text": f"Данные из документов:\n{combined_text}",
-                },
+                {"role": "system", "text": system_prompt},
+                {"role": "user", "text": user_prompt},
             ],
         }
 
@@ -319,13 +347,13 @@ class ResumeService:
                 )
                 sanitized = sanitize_resume_text(result, max_length=RESUME_TEXT_LIMIT)
                 if sanitized:
-                    log.info("YandexGPT resume generated for %s", target_name)
+                    log.info("YandexGPT resume generated for %s", student_meta["full_name"])
                     return sanitized
             except httpx.HTTPStatusError as exc:
                 response_text = exc.response.text[:200] if exc.response is not None else ""
                 log.error("YandexGPT API HTTP %s: %s", exc.response.status_code, response_text)
             except Exception:
-                log.exception("YandexGPT API error for %s", target_name)
+                log.exception("YandexGPT API error for %s", student_meta["full_name"])
 
         return None
 
@@ -335,83 +363,67 @@ class ResumeService:
         user: Users,
         docs_data: list[dict[str, object]],
     ) -> str:
+        student_meta = self._build_student_meta(user)
         total = len(docs_data)
         total_points = sum(int(document.get("points", 0) or 0) for document in docs_data)
-
         category_counter = Counter(str(document.get("category", "Другое")) for document in docs_data)
-        level_counter = Counter(str(document.get("level", "Не указан")) for document in docs_data)
-        best_level = max(
+        best_document = max(
             docs_data,
             key=lambda document: LEVEL_ORDER.get(str(document.get("level", "")), 0),
-        ).get("level", AchievementLevel.SCHOOL.value)
+        )
+        best_level = str(best_document.get("level", AchievementLevel.SCHOOL.value))
+        main_categories = [category for category, _ in category_counter.most_common(2)]
+        categories_text = " и ".join(main_categories).lower() if main_categories else "проектной деятельности"
 
-        education_info = ""
-        if user and getattr(user, "education_level", None):
-            education_value = _enum_value(user.education_level, "")
-            course_label = f", {user.course} курс" if user.course else ""
-            education_info = f"{education_value}{course_label}"
+        achievement_lines = []
+        for document in docs_data[:8]:
+            title = str(document.get("title", "Без названия"))
+            level = str(document.get("level", "Не указан"))
+            result = str(document.get("result", "") or "")
+            date = str(document.get("date", "") or "")
+            suffix_parts = [part for part in (result, level, date) if part]
+            suffix = f" ({', '.join(suffix_parts)})" if suffix_parts else ""
+            achievement_lines.append(f"- {title}{suffix};")
+
+        if achievement_lines:
+            achievement_lines[-1] = achievement_lines[-1].rstrip(";") + "."
+
+        intro = (
+            f"За время обучения {student_name} зарекомендовал себя как ответственный, "
+            "целеустремленный и дисциплинированный студент. Он активно вовлечен в учебную, "
+            f"проектную и исследовательскую деятельность, уделяет внимание направлению {categories_text}."
+        )
+        achievements_summary = (
+            f"{student_name} имеет {total} подтвержденных достижений с максимальным уровнем "
+            f"'{best_level}' и суммарным рейтингом {total_points} баллов. Представленные документы "
+            "подтверждают устойчивый интерес студента к профессиональному развитию и готовность "
+            "участвовать в мероприятиях разного уровня."
+        )
+        recommendation = (
+            f"{student_name} успешно совмещает обучение с участием в конкурсах, проектах и иных "
+            "мероприятиях. Может быть рекомендован для дальнейшего участия в научной, проектной "
+            "и грантовой деятельности образовательной организации."
+        )
 
         parts = [
-            f"СВОДКА ПРОФИЛЯ: {student_name}",
-            "=" * 40,
+            "ХАРАКТЕРИСТИКА-РЕКОМЕНДАЦИЯ",
+            "",
+            f"ФИО студента: {student_meta['full_name']}",
+            f"Курс: {student_meta['course']}, группа: {student_meta['group']}",
+            f"Специальность: {student_meta['specialty']}",
+            f"Квалификация: {student_meta['qualification']}",
+            f"Средний балл: {student_meta['gpa']}",
+            "",
+            intro,
+            "",
+            achievements_summary,
+            "",
+            f"{student_name} успешно совмещает учебу с участием в интеллектуальных соревнованиях, проектах и мероприятиях:",
+            *achievement_lines,
+            "",
+            recommendation,
+            "",
+            f"Научный руководитель\t\t\t\t{student_meta['supervisor']}",
         ]
-
-        if education_info:
-            parts.append(f"Обучение: {education_info}")
-        parts.append(f"Подтверждённых достижений: {total}")
-        parts.append(f"Общий балл: {total_points}")
-        parts.append(f"Высший уровень: {best_level}")
-        parts.append("")
-
-        parts.append("ПО КАТЕГОРИЯМ:")
-        for category, count in category_counter.most_common():
-            parts.append(f"  - {category}: {count} шт.")
-        parts.append("")
-
-        parts.append("ПО УРОВНЯМ:")
-        for level_name in sorted(level_counter.keys(), key=lambda value: LEVEL_ORDER.get(value, 0), reverse=True):
-            parts.append(f"  - {level_name}: {level_counter[level_name]}")
-        parts.append("")
-
-        parts.append("ДОСТИЖЕНИЯ:")
-        parts.append("-" * 40)
-
-        for index, document in enumerate(docs_data, 1):
-            title = str(document.get("title", "Без названия"))
-            category = str(document.get("category", "Другое"))
-            level = str(document.get("level", "Не указан"))
-            points = int(document.get("points", 0) or 0)
-            date = str(document.get("date", "") or "")
-            description = sanitize_resume_text(str(document.get("description", "")), max_length=600)
-            ocr_text = sanitize_resume_text(str(document.get("ocr_text", "")), max_length=350)
-
-            parts.append(f"\n{index}. {title}")
-            parts.append(f"   Категория: {category} | Уровень: {level}")
-            if points:
-                parts.append(f"   Баллы: +{points}")
-            if date:
-                parts.append(f"   Дата: {date}")
-            if description:
-                parts.append(f"   Описание: {description}")
-            if ocr_text and len(ocr_text) > 10:
-                parts.append(f"   Из документа: {ocr_text}")
-
-        main_categories = [category for category, _ in category_counter.most_common(2)]
-        categories_text = " и ".join(main_categories) if main_categories else "различных направлениях"
-
-        parts.extend(
-            [
-                "",
-                "-" * 40,
-                (
-                    f"Итог: {student_name} имеет {total} подтверждённых достижений "
-                    f"в области {categories_text.lower()}, "
-                    f"с максимальным уровнем \"{best_level}\" "
-                    f"и общим баллом {total_points}."
-                ),
-                f"",
-                f"Сводка сгенерирована: {datetime.now(timezone.utc).strftime('%d.%m.%Y %H:%M UTC')}",
-            ]
-        )
 
         return sanitize_resume_text("\n".join(parts), max_length=RESUME_TEXT_LIMIT)

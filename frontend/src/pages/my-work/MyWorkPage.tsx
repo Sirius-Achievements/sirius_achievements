@@ -438,11 +438,14 @@ export function MyWorkPage() {
 
     try {
       const response = await documentsApi.download(item.id)
+      const contentTypeHeader = response.headers['content-type']
+      const contentType =
+        typeof contentTypeHeader === 'string' ? contentTypeHeader : 'application/octet-stream'
       const blob =
         response.data instanceof Blob
           ? response.data
           : new Blob([response.data], {
-              type: response.headers['content-type'] || 'application/octet-stream',
+              type: contentType,
             })
       const link = document.createElement('a')
       link.href = URL.createObjectURL(blob)

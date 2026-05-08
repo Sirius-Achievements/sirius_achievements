@@ -78,9 +78,12 @@ export function AppLayout() {
     if (preview.documentId) {
       try {
         const response = await documentsApi.download(preview.documentId)
+        const contentTypeHeader = response.headers['content-type']
+        const contentType =
+          typeof contentTypeHeader === 'string' ? contentTypeHeader : 'application/octet-stream'
         const blob = response.data instanceof Blob
           ? response.data
-          : new Blob([response.data], { type: response.headers['content-type'] || 'application/octet-stream' })
+          : new Blob([response.data], { type: contentType })
         const href = URL.createObjectURL(blob)
         const link = document.createElement('a')
         link.href = href

@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Chart, registerables } from 'chart.js'
-import Cropper from 'cropperjs'
-import 'cropperjs/dist/cropper.css'
+import Cropper, { DEFAULT_TEMPLATE } from 'cropperjs'
 import { profileApi, type ProfileResponse } from '@/api/profile'
 import { usersApi } from '@/api/users'
 import { DocumentPreviewImage } from '@/components/ui/DocumentPreviewImage'
@@ -15,6 +14,11 @@ import { getErrorMessage } from '@/utils/http'
 import { buildMediaUrl } from '@/utils/media'
 
 Chart.register(...registerables)
+
+const AVATAR_CROPPER_TEMPLATE = DEFAULT_TEMPLATE.replace(
+  '<cropper-selection initial-coverage="0.5" movable resizable>',
+  '<cropper-selection initial-coverage="0.75" aspect-ratio="1" movable resizable>',
+)
 
 function stripEmoji(value: string): string {
   return value.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, '').replace(/\s{2,}/g, ' ')
@@ -366,17 +370,9 @@ export function ProfilePage() {
     let inst: Cropper | null = null
     const initCropper = () => {
       inst?.destroy()
-      inst = new Cropper(image, {
-        aspectRatio: 1,
-        viewMode: 1,
-        dragMode: 'move',
-        guides: false,
-        center: false,
-        highlight: false,
-        background: false,
-        ready: () => setIsCropperReady(true),
-      })
+      inst = new Cropper(image, { template: AVATAR_CROPPER_TEMPLATE })
       cropperRef.current = inst
+      requestAnimationFrame(() => setIsCropperReady(Boolean(inst?.getCropperSelection())))
     }
 
     setIsCropperReady(false)
@@ -417,10 +413,13 @@ export function ProfilePage() {
     e.target.value = ''
   }
 
-  const handleCropSave = () => {
+  const handleCropSave = async () => {
     const cropper = cropperRef.current
     if (!cropper) return
-    cropper.getCroppedCanvas({ maxWidth: 800, maxHeight: 800 }).toBlob((blob: Blob | null) => {
+    const selection = cropper.getCropperSelection()
+    if (!selection) return
+    const canvas = await selection.$toCanvas({ width: 800, height: 800 })
+    canvas.toBlob((blob: Blob | null) => {
       if (!blob) return
       const file = new File([blob], 'avatar.jpg', { type: 'image/jpeg' })
       const previewUrl = URL.createObjectURL(blob)
