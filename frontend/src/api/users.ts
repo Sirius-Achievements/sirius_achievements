@@ -21,8 +21,8 @@ export const usersApi = {
     return client.get<UserDetailResponse>(`/users/${id}`)
   },
 
-  search(q: string) {
-    return client.get<SearchSuggestionItem[]>('/users/search', { params: { q } })
+  search(q: string, limit = 50) {
+    return client.get<SearchSuggestionItem[]>('/users/search', { params: { q, limit } })
   },
 
   updateRole(id: number, role: string, educationLevel?: string, moderatorCourses?: number[], moderatorGroups?: string[]) {

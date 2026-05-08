@@ -147,7 +147,10 @@ export function SearchAutocompleteInput({
           autoComplete="off"
           onFocus={() => setIsFocused(true)}
           onBlur={() => window.setTimeout(() => setIsFocused(false), 120)}
-          onChange={(event) => onChange(event.target.value)}
+          onChange={(event) => {
+            setIsFocused(true)
+            onChange(event.target.value)
+          }}
           className="h-[38px] w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm text-slate-800 outline-none transition-all focus:border-indigo-600 focus:bg-surface focus:ring-2 focus:ring-indigo-600/20"
         />
       </div>

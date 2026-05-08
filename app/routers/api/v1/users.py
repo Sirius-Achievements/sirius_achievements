@@ -353,6 +353,7 @@ async def list_users(
 @router.get('/search')
 async def search_users(
     q: str = Query(..., min_length=1),
+    limit: int = Query(default=20, ge=1, le=100),
     current_user=Depends(_check_admin_rights),
     db: AsyncSession = Depends(get_db),
 ):
@@ -370,7 +371,7 @@ async def search_users(
                 (Users.last_name + ' ' + Users.first_name).ilike(like_term),
             ),
         )
-        .limit(5)
+        .limit(limit)
     )
 
     stmt = _apply_moderator_user_scope(stmt, current_user)

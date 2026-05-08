@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
+from pydantic import BaseModel
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,6 +19,19 @@ from app.models.user import Users
 from app.utils.points import aggregated_gpa_bonus_expr
 
 router = APIRouter(prefix='/api/v1/reports', tags=['api.v1.reports'])
+
+
+class ReportExportPayload(BaseModel):
+    period: str | None = None
+    date_from: str | None = None
+    date_to: str | None = None
+    education_level: str | None = None
+    course: str | None = None
+    group: str | None = None
+    student_id: int | None = None
+    student_ids: list[int] | None = None
+    category: str | None = None
+    status: str | None = None
 
 
 def _parse_date(value: str | None, *, end: bool = False):
@@ -96,6 +110,30 @@ async def _require_staff(current_user=Depends(auth)):
     if current_user.role not in {UserRole.MODERATOR, UserRole.SUPER_ADMIN}:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Экспорт доступен только сотрудникам.')
     return current_user
+
+
+@router.post('/{report_type}/export')
+async def export_report_post(
+    report_type: str,
+    payload: ReportExportPayload,
+    current_user=Depends(_require_staff),
+    db: AsyncSession = Depends(get_db),
+):
+    return await export_report(
+        report_type=report_type,
+        period=payload.period,
+        date_from=payload.date_from,
+        date_to=payload.date_to,
+        education_level=payload.education_level,
+        course=payload.course,
+        group=payload.group,
+        student_id=payload.student_id,
+        student_ids=payload.student_ids,
+        category=payload.category,
+        status_filter=payload.status,
+        current_user=current_user,
+        db=db,
+    )
 
 
 @router.get('/{report_type}')
