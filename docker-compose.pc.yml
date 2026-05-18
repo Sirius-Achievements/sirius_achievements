@@ -1,0 +1,82 @@
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: sirius_db_new
+    restart: always
+    ports:
+      - "${PC_BIND_IP:-10.8.0.2}:5433:5432"
+    environment:
+      POSTGRES_USER: ${DB_USERNAME:?DB_USERNAME is required}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      POSTGRES_DB: ${DB_NAME:?DB_NAME is required}
+      TZ: Europe/Moscow
+    volumes:
+      - postgres_data_new:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: sirius_redis_new
+    restart: always
+    command: redis-server --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required} --appendonly yes
+    ports:
+      - "${PC_BIND_IP:-10.8.0.2}:6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    container_name: sirius_minio
+    restart: always
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin123}
+    volumes:
+      - minio_data:/data
+    ports:
+      - "${PC_BIND_IP:-10.8.0.2}:9000:9000"
+      - "${PC_BIND_IP:-10.8.0.2}:9001:9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  ai_service:
+    image: ${AI_IMAGE:-sirius-ai-service:local}
+    build:
+      context: ./ai-service
+      dockerfile: Dockerfile
+    container_name: sirius_ai_service
+    restart: always
+    environment:
+      TZ: Europe/Moscow
+      EASYOCR_MODEL_DIR: /app/easyocr_models
+      RESUME_OCR_MODEL_DOWNLOAD_ENABLED: ${RESUME_OCR_MODEL_DOWNLOAD_ENABLED:-false}
+    volumes:
+      - ./models:/app/easyocr_models
+    ports:
+      - "${PC_BIND_IP:-10.8.0.2}:8001:8001"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  postgres_data_new:
+  redis_data:
+  minio_data:
+
