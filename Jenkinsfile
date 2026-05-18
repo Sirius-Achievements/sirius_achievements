@@ -6,126 +6,295 @@ pipeline {
     githubPush()
   }
 
+  options {
+    disableConcurrentBuilds()
+    timestamps()
+    skipDefaultCheckout(true)
+  }
+
   environment {
-    DOCKERHUB_USER = 'sh1tc0derdocker'
-    IMAGE_APP      = "${DOCKERHUB_USER}/sirius-app"
-    DEPLOY_DIR     = '/root/sirius_achievements'
-    NOTIFY_EMAIL   = 'efirkoumir@gmail.com,yaroslavroch2@gmail.com,matveys909@gmail.com,sh1tc0der@yandex.ru'
+    // VPS: Jenkins, nginx and web live here.
+    DEPLOY_DIR       = '/root/sirius_achievements'
+    VPS_COMPOSE_FILE = 'docker-compose.vps.yml'
+
+    // PC behind OpenVPN. Change user/path if needed.
+    PC_HOST         = 'sirius@10.8.0.2'
+    PC_VPN_IP       = '10.8.0.2'
+    PC_DEPLOY_DIR   = '/home/sirius/sirius_achievements'
+    PC_COMPOSE_FILE = 'docker-compose.pc.yml'
+
+    // Jenkins Credentials ID: SSH Username with private key for the PC user.
+    SSH_CREDENTIALS_ID = 'deploy-pc-ssh-key'
+
+    APP_IMAGE_BASE = 'sirius-app'
+    AI_IMAGE_BASE  = 'sirius-ai-service'
+
+    AI_HEALTH_URL    = 'http://10.8.0.2:8001/health'
+    MINIO_HEALTH_URL = 'http://10.8.0.2:9000/minio/health/ready'
+    WEB_HEALTH_URL   = 'https://emercom.online/health'
+
+    NOTIFY_EMAIL = 'efirkoumir@gmail.com,yaroslavroch2@gmail.com,matveys909@gmail.com,sh1tc0der@yandex.ru'
+
+    SKIP_DEPLOY = 'false'
+    IMAGE_TAG   = ''
+    APP_IMAGE   = ''
+    AI_IMAGE    = ''
   }
 
   stages {
 
-    stage('Check Tag') {
-      steps {
-        script {
-          env.IMAGE_TAG = sh(
-            script: "git describe --tags --exact-match 2>/dev/null || echo ''",
-            returnStdout: true
-          ).trim()
-
-          if (env.IMAGE_TAG == '') {
-            currentBuild.result = 'NOT_BUILT'
-            error('No tag on this commit - skipping deployment')
-          }
-
-          echo "Tag found: ${env.IMAGE_TAG} - starting deployment"
-        }
-      }
-    }
-
     stage('Checkout') {
       steps {
         checkout scm
-        echo "Repository cloned, branch: prod, tag: ${env.IMAGE_TAG}"
+        sh 'git fetch --tags --force'
       }
     }
 
-    stage('Build') {
+    stage('Check Tag') {
       steps {
         script {
-          sh """
-            docker pull ${IMAGE_APP}:latest || true
-            docker build \
-              --cache-from ${IMAGE_APP}:latest \
-              --build-arg BUILDKIT_INLINE_CACHE=1 \
-              -t ${IMAGE_APP}:${env.IMAGE_TAG} \
-              -t ${IMAGE_APP}:latest \
-              .
-          """
+          def exactTag = sh(
+            script: "git describe --tags --exact-match 2>/dev/null || true",
+            returnStdout: true
+          ).trim()
+
+          if (exactTag == '') {
+            exactTag = sh(
+              script: "git tag --points-at HEAD | sort -V | tail -n 1 || true",
+              returnStdout: true
+            ).trim()
+          }
+
+          if (exactTag == '') {
+            env.SKIP_DEPLOY = 'true'
+            currentBuild.description = 'No Git tag on HEAD, deployment skipped'
+            echo 'No Git tag on this commit. Deployment skipped.'
+            return
+          }
+
+          env.IMAGE_TAG = exactTag
+          env.APP_IMAGE = "${env.APP_IMAGE_BASE}:${env.IMAGE_TAG}"
+          env.AI_IMAGE  = "${env.AI_IMAGE_BASE}:${env.IMAGE_TAG}"
+
+          currentBuild.displayName = "#${env.BUILD_NUMBER} ${env.IMAGE_TAG}"
+          currentBuild.description = "Deploy tag ${env.IMAGE_TAG}"
+          echo "Tag found: ${env.IMAGE_TAG}. Starting deployment."
         }
       }
     }
 
-    stage('Push to Docker Hub') {
+    stage('Prepare VPS Files') {
+      when {
+        expression { env.SKIP_DEPLOY != 'true' }
+      }
       steps {
-        withCredentials([usernamePassword(
-          credentialsId: 'dockerhub-creds',
-          usernameVariable: 'DH_USER',
-          passwordVariable: 'DH_PASS'
-        )]) {
-          sh """
-            echo "\$DH_PASS" | docker login -u "\$DH_USER" --password-stdin
-            docker push ${IMAGE_APP}:${env.IMAGE_TAG}
-            docker push ${IMAGE_APP}:latest
-            docker logout
-          """
+        sh '''
+          set -e
+          mkdir -p "$DEPLOY_DIR"
+
+          rsync -a --delete \
+            --exclude='.git/' \
+            --exclude='.env' \
+            --exclude='models/' \
+            --exclude='postgres_data*/' \
+            --exclude='minio_data*/' \
+            --exclude='redis_data*/' \
+            --exclude='jenkins_home/' \
+            --exclude='uploads_data/' \
+            ./ "$DEPLOY_DIR"/
+        '''
+      }
+    }
+
+    stage('Prepare PC Files') {
+      when {
+        expression { env.SKIP_DEPLOY != 'true' }
+      }
+      steps {
+        sshagent(credentials: [env.SSH_CREDENTIALS_ID]) {
+          sh '''
+            set -e
+
+            ssh -o StrictHostKeyChecking=no "$PC_HOST" "mkdir -p '$PC_DEPLOY_DIR' '$PC_DEPLOY_DIR/models'"
+
+            rsync -az --delete -e "ssh -o StrictHostKeyChecking=no" \
+              --exclude='.git/' \
+              --exclude='.env' \
+              --exclude='models/' \
+              --exclude='postgres_data*/' \
+              --exclude='minio_data*/' \
+              --exclude='redis_data*/' \
+              --exclude='jenkins_home/' \
+              --exclude='uploads_data/' \
+              ./ "$PC_HOST:$PC_DEPLOY_DIR/"
+          '''
         }
       }
     }
 
-    stage('Save Current Version') {
+    stage('Save Current Versions') {
+      when {
+        expression { env.SKIP_DEPLOY != 'true' }
+      }
       steps {
-        script {
-          sh """
-            PREV=\$(docker inspect --format='{{index .RepoTags 0}}' sirius_app_new 2>/dev/null || echo '')
-            echo "\$PREV" > /tmp/sirius_prev_tag.txt
-            echo "Current running version: \$PREV"
-          """
+        sshagent(credentials: [env.SSH_CREDENTIALS_ID]) {
+          sh '''
+            set +e
+
+            APP_PREV=$(docker inspect --format='{{.Config.Image}}' sirius_app_new 2>/dev/null || true)
+            echo "$APP_PREV" > /tmp/sirius_prev_app_image.txt
+            echo "Current VPS web image: ${APP_PREV:-none}"
+
+            AI_PREV=$(ssh -o StrictHostKeyChecking=no "$PC_HOST" "docker inspect --format='{{.Config.Image}}' sirius_ai_service 2>/dev/null || true")
+            echo "$AI_PREV" > /tmp/sirius_prev_ai_image.txt
+            echo "Current PC AI image: ${AI_PREV:-none}"
+          '''
         }
       }
     }
 
-    stage('Deploy') {
+    stage('Build PC AI Image') {
+      when {
+        expression { env.SKIP_DEPLOY != 'true' }
+      }
       steps {
-        script {
-          sh """
-            cd ${DEPLOY_DIR}
-
-            echo "Stopping current web service..."
-            docker compose stop web
-
-            echo "Starting new version ${env.IMAGE_TAG}..."
-            APP_IMAGE=${IMAGE_APP}:${env.IMAGE_TAG} \
-            docker compose up -d --no-deps --pull always web
-
-            echo "Waiting for container to start..."
-            sleep 100
-          """
+        sshagent(credentials: [env.SSH_CREDENTIALS_ID]) {
+          sh '''
+            set -e
+            ssh -o StrictHostKeyChecking=no "$PC_HOST" "
+              set -e
+              compose() {
+                if docker compose version >/dev/null 2>&1; then docker compose \"\$@\"; else docker-compose \"\$@\"; fi
+              }
+              cd '$PC_DEPLOY_DIR'
+              AI_IMAGE='$AI_IMAGE' compose -f '$PC_COMPOSE_FILE' build ai_service
+            "
+          '''
         }
       }
     }
 
-    stage('Health Check') {
+    stage('Deploy PC Services') {
+      when {
+        expression { env.SKIP_DEPLOY != 'true' }
+      }
       steps {
-        script {
-          sh """
-            STATUS=\$(docker inspect --format='{{.State.Status}}' sirius_app_new 2>/dev/null || echo 'missing')
-            echo "Container status: \$STATUS"
-            if [ "\$STATUS" != "running" ]; then
-              echo "Container is not running!"
-              exit 1
-            fi
-          """
-
-          sh """
-            HTTP=\$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 https://emercom.online/health || echo '000')
-            echo "Health endpoint returned: \$HTTP"
-            if [ "\$HTTP" != "200" ]; then
-              echo "Health check failed! Got HTTP \$HTTP"
-              exit 1
-            fi
-          """
+        sshagent(credentials: [env.SSH_CREDENTIALS_ID]) {
+          sh '''
+            set -e
+            ssh -o StrictHostKeyChecking=no "$PC_HOST" "
+              set -e
+              compose() {
+                if docker compose version >/dev/null 2>&1; then docker compose \"\$@\"; else docker-compose \"\$@\"; fi
+              }
+              cd '$PC_DEPLOY_DIR'
+              AI_IMAGE='$AI_IMAGE' compose -f '$PC_COMPOSE_FILE' up -d db redis minio ai_service
+            "
+          '''
         }
+      }
+    }
+
+    stage('Health Check PC Services') {
+      when {
+        expression { env.SKIP_DEPLOY != 'true' }
+      }
+      steps {
+        sshagent(credentials: [env.SSH_CREDENTIALS_ID]) {
+          sh '''
+            set -e
+
+            echo "Checking AI from VPS/Jenkins network..."
+            curl -fsS --max-time 30 "$AI_HEALTH_URL"
+
+            echo "Checking MinIO from VPS/Jenkins network..."
+            curl -fsS --max-time 30 "$MINIO_HEALTH_URL"
+
+            echo "Checking PostgreSQL port from VPS/Jenkins network..."
+            timeout 10 bash -c "</dev/tcp/$PC_VPN_IP/5433"
+
+            echo "Checking Redis port from VPS/Jenkins network..."
+            timeout 10 bash -c "</dev/tcp/$PC_VPN_IP/6379"
+
+            echo "Checking PostgreSQL and Redis inside PC containers..."
+            ssh -o StrictHostKeyChecking=no "$PC_HOST" "
+              set -e
+              cd '$PC_DEPLOY_DIR'
+              set -a
+              . ./.env
+              set +a
+              docker exec sirius_db_new pg_isready -U \"\$DB_USERNAME\" -d \"\$DB_NAME\"
+              docker exec sirius_redis_new redis-cli -a \"\$REDIS_PASSWORD\" ping
+            "
+          '''
+        }
+      }
+    }
+
+    stage('Build VPS Web Image') {
+      when {
+        expression { env.SKIP_DEPLOY != 'true' }
+      }
+      steps {
+        sh '''
+          set -e
+          cd "$DEPLOY_DIR"
+
+          compose() {
+            if docker compose version >/dev/null 2>&1; then docker compose "$@"; else docker-compose "$@"; fi
+          }
+
+          APP_IMAGE="$APP_IMAGE" compose -f "$VPS_COMPOSE_FILE" build web
+        '''
+      }
+    }
+
+    stage('Deploy VPS Web') {
+      when {
+        expression { env.SKIP_DEPLOY != 'true' }
+      }
+      steps {
+        sh '''
+          set -e
+          cd "$DEPLOY_DIR"
+
+          compose() {
+            if docker compose version >/dev/null 2>&1; then docker compose "$@"; else docker-compose "$@"; fi
+          }
+
+          APP_IMAGE="$APP_IMAGE" compose -f "$VPS_COMPOSE_FILE" up -d --no-deps web
+          compose -f "$VPS_COMPOSE_FILE" up -d nginx
+
+          echo "Waiting for web container to start..."
+          sleep 30
+        '''
+      }
+    }
+
+    stage('Health Check VPS Web') {
+      when {
+        expression { env.SKIP_DEPLOY != 'true' }
+      }
+      steps {
+        sh '''
+          set -e
+
+          STATUS=$(docker inspect --format='{{.State.Status}}' sirius_app_new 2>/dev/null || echo 'missing')
+          echo "Container status: $STATUS"
+          if [ "$STATUS" != "running" ]; then
+            echo "Container is not running!"
+            docker logs --tail=100 sirius_app_new || true
+            exit 1
+          fi
+
+          HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "$WEB_HEALTH_URL" || echo '000')
+          echo "Health endpoint returned: $HTTP"
+          if [ "$HTTP" != "200" ]; then
+            echo "Health check failed! Got HTTP $HTTP"
+            docker logs --tail=100 sirius_app_new || true
+            exit 1
+          fi
+        '''
       }
     }
 
@@ -135,57 +304,115 @@ pipeline {
 
     failure {
       script {
-        echo "Deployment failed - starting rollback..."
-        sh """
-          PREV=\$(cat /tmp/sirius_prev_tag.txt 2>/dev/null || echo '')
-          if [ -n "\$PREV" ]; then
-            echo "Rolling back to: \$PREV"
-            cd ${DEPLOY_DIR}
-            docker compose stop web
-            docker tag "\$PREV" ${IMAGE_APP}:latest
-            docker compose up -d --no-deps web
-            echo "Rollback complete"
-          else
-            echo "No previous version found - skipping rollback"
-          fi
-        """
-      }
+        if (env.SKIP_DEPLOY == 'true') {
+          echo 'Build was skipped because HEAD has no Git tag. No rollback and no email.'
+          return
+        }
 
-      mail(
-        to: "${env.NOTIFY_EMAIL}",
-        subject: "Deployment failed - ${env.IMAGE_TAG} - ${env.JOB_NAME}",
-        body: """
+        echo 'Deployment failed. Starting rollback...'
+
+        sh '''
+          set +e
+
+          compose() {
+            if docker compose version >/dev/null 2>&1; then docker compose "$@"; else docker-compose "$@"; fi
+          }
+
+          APP_PREV=$(cat /tmp/sirius_prev_app_image.txt 2>/dev/null || true)
+          if [ -n "$APP_PREV" ]; then
+            echo "Rolling back VPS web to: $APP_PREV"
+            cd "$DEPLOY_DIR"
+            APP_IMAGE="$APP_PREV" compose -f "$VPS_COMPOSE_FILE" up -d --no-deps web
+          else
+            echo "No previous VPS web image found. Skipping VPS rollback."
+          fi
+        '''
+
+        sshagent(credentials: [env.SSH_CREDENTIALS_ID]) {
+          sh '''
+            set +e
+            AI_PREV=$(cat /tmp/sirius_prev_ai_image.txt 2>/dev/null || true)
+            if [ -n "$AI_PREV" ]; then
+              echo "Rolling back PC ai_service to: $AI_PREV"
+              ssh -o StrictHostKeyChecking=no "$PC_HOST" "
+                compose() {
+                  if docker compose version >/dev/null 2>&1; then docker compose \"\$@\"; else docker-compose \"\$@\"; fi
+                }
+                cd '$PC_DEPLOY_DIR'
+                AI_IMAGE='$AI_PREV' compose -f '$PC_COMPOSE_FILE' up -d --no-deps ai_service
+              "
+            else
+              echo "No previous PC AI image found. Skipping PC rollback."
+            fi
+          '''
+        }
+
+        mail(
+          to: "${env.NOTIFY_EMAIL}",
+          subject: "Deployment failed - ${env.IMAGE_TAG ?: 'no-tag'} - ${env.JOB_NAME}",
+          body: """
 Deployment failed.
 
 Project: ${env.JOB_NAME}
-Tag:     ${env.IMAGE_TAG}
-Branch:  prod
+Tag:     ${env.IMAGE_TAG ?: 'no-tag'}
 Build:   #${env.BUILD_NUMBER}
+
+Rollback was attempted automatically.
+
+Images:
+App: ${env.APP_IMAGE ?: 'not built'}
+AI:  ${env.AI_IMAGE ?: 'not built'}
 
 Logs:
 ${env.BUILD_URL}console
-        """.stripIndent()
-      )
+          """.stripIndent()
+        )
+      }
     }
 
     success {
-      mail(
-        to: "${env.NOTIFY_EMAIL}",
-        subject: "Deployment succeeded - ${env.IMAGE_TAG} - ${env.JOB_NAME}",
-        body: """
+      script {
+        if (env.SKIP_DEPLOY == 'true') {
+          echo 'HEAD has no Git tag. Deployment skipped successfully.'
+          return
+        }
+
+        mail(
+          to: "${env.NOTIFY_EMAIL}",
+          subject: "Deployment succeeded - ${env.IMAGE_TAG} - ${env.JOB_NAME}",
+          body: """
 Deployment succeeded.
 
 Project: ${env.JOB_NAME}
 Tag:     ${env.IMAGE_TAG}
-Branch:  prod
 Build:   #${env.BUILD_NUMBER}
+
+Images:
+App: ${env.APP_IMAGE}
+AI:  ${env.AI_IMAGE}
+
+Health checks:
+Web:   ${env.WEB_HEALTH_URL}
+AI:    ${env.AI_HEALTH_URL}
+MinIO: ${env.MINIO_HEALTH_URL}
 
 Logs:
 ${env.BUILD_URL}console
-        """.stripIndent()
-      )
+          """.stripIndent()
+        )
 
-      sh "docker image prune -f --filter 'until=72h'"
+        sh '''
+          set +e
+          docker image prune -f --filter 'until=72h'
+        '''
+
+        sshagent(credentials: [env.SSH_CREDENTIALS_ID]) {
+          sh '''
+            set +e
+            ssh -o StrictHostKeyChecking=no "$PC_HOST" "docker image prune -f --filter 'until=72h' || true"
+          '''
+        }
+      }
     }
 
   }

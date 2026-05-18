@@ -1,0 +1,35 @@
+FROM jenkins/jenkins:lts
+
+USER root
+
+# Jenkins runs Docker commands through the host Docker socket mounted in compose.
+# We install only the Docker CLI, Docker Compose plugin, SSH client and rsync.
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+      ca-certificates \
+      curl \
+      gnupg \
+      lsb-release \
+      openssh-client \
+      rsync \
+      git \
+      bash; \
+    install -m 0755 -d /etc/apt/keyrings; \
+    curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc; \
+    chmod a+r /etc/apt/keyrings/docker.asc; \
+    . /etc/os-release; \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian ${VERSION_CODENAME} stable" > /etc/apt/sources.list.d/docker.list; \
+    if apt-get update && apt-get install -y --no-install-recommends docker-ce-cli docker-compose-plugin; then \
+      echo "Installed docker-ce-cli and docker-compose-plugin from Docker repository"; \
+    else \
+      echo "Docker repository install failed, falling back to Debian packages"; \
+      rm -f /etc/apt/sources.list.d/docker.list; \
+      apt-get update; \
+      apt-get install -y --no-install-recommends docker.io docker-compose; \
+    fi; \
+    mkdir -p /var/jenkins_home/.ssh; \
+    chown -R jenkins:jenkins /var/jenkins_home/.ssh; \
+    rm -rf /var/lib/apt/lists/*
+
+USER jenkins
