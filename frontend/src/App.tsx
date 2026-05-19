@@ -1,4 +1,5 @@
-﻿import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
+﻿import { useEffect } from 'react'
+import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { AuthLayout } from '@/components/layout/AuthLayout'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
@@ -8,6 +9,8 @@ import { NotificationProvider } from '@/contexts/NotificationContext'
 import { ThemeProvider } from '@/contexts/ThemeContext'
 import { ToastProvider } from '@/contexts/ToastContext'
 import { useAuth } from '@/hooks/useAuth'
+import { useToast } from '@/hooks/useToast'
+import { onServerError } from '@/utils/serverErrorBus'
 import { LoginPage } from '@/pages/auth/LoginPage'
 import { RegisterPage } from '@/pages/auth/RegisterPage'
 import { ForgotPasswordPage } from '@/pages/auth/ForgotPasswordPage'
@@ -34,6 +37,24 @@ import { SupportPage } from '@/pages/support/SupportPage'
 import { UserDetailPage } from '@/pages/users/UserDetailPage'
 import { UsersPage } from '@/pages/users/UsersPage'
 import { APP_PREFIX } from '@/utils/constants'
+
+function ServerErrorToastBridge() {
+  const { pushToast } = useToast()
+
+  useEffect(
+    () =>
+      onServerError(() => {
+        pushToast({
+          title: 'Сервис временно недоступен',
+          message: 'Не удалось связаться с сервером. Попробуйте повторить позже.',
+          tone: 'error',
+        })
+      }),
+    [pushToast],
+  )
+
+  return null
+}
 
 function RequireAuth() {
   const { isAuthenticated, isBootstrapping } = useAuth()
@@ -125,6 +146,7 @@ export default function App() {
         <AuthProvider>
           <NotificationProvider>
             <BrowserRouter basename={APP_PREFIX}>
+              <ServerErrorToastBridge />
               <AppRoutes />
               <ToastViewport />
             </BrowserRouter>

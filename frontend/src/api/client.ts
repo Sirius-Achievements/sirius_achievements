@@ -1,5 +1,6 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios'
 import { API_BASE, APP_PREFIX, STORAGE_KEYS } from '@/utils/constants'
+import { emitServerError } from '@/utils/serverErrorBus'
 
 const client = axios.create({
   baseURL: API_BASE,
@@ -105,6 +106,12 @@ client.interceptors.response.use(
       } finally {
         isRefreshing = false
       }
+    }
+
+    const status = error.response?.status
+    const isNetworkFailure = !error.response && error.code !== 'ERR_CANCELED'
+    if ((status !== undefined && status >= 500) || isNetworkFailure) {
+      emitServerError({ status: status ?? 0, url: requestUrl })
     }
 
     return Promise.reject(error)
