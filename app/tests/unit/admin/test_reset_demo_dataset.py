@@ -1,21 +1,20 @@
-from app.models.enums import AchievementCategory, EducationLevel
 from app.seeders.reset_demo_dataset import (
-    build_active_user_email,
-    build_pending_user_email,
-    db_achievement_category,
+    DEMO_EMAIL_DOMAIN,
+    build_active_email,
+    build_pending_email,
 )
 
 
-def test_build_active_user_email_uses_valid_demo_domain():
-    assert build_active_user_email(EducationLevel.COLLEGE, 1) == "college.student001@example.com"
-    assert build_active_user_email(EducationLevel.POSTGRADUATE, 12) == "postgraduate.student012@example.com"
+def test_build_active_email_uses_valid_demo_domain():
+    email = build_active_email(course=1, group="1.1", index=1)
+    assert email == f"specialist.c1.g11.001@{DEMO_EMAIL_DOMAIN}"
 
 
-def test_build_pending_user_email_uses_valid_demo_domain():
-    assert build_pending_user_email(1) == "registration.request01@example.com"
-    assert build_pending_user_email(10) == "registration.request10@example.com"
+def test_build_active_email_falls_back_when_group_has_no_digits():
+    email = build_active_email(course=2, group="alpha", index=7)
+    assert email == f"specialist.c2.g200.007@{DEMO_EMAIL_DOMAIN}"
 
 
-def test_db_achievement_category_uses_enum_name_for_all_categories():
-    assert db_achievement_category(AchievementCategory.HACKATHON) == "HACKATHON"
-    assert db_achievement_category(AchievementCategory.OTHER) == "OTHER"
+def test_build_pending_email_uses_valid_demo_domain():
+    assert build_pending_email(1) == f"pending.student001@{DEMO_EMAIL_DOMAIN}"
+    assert build_pending_email(12) == f"pending.student012@{DEMO_EMAIL_DOMAIN}"

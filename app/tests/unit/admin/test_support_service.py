@@ -10,16 +10,15 @@ import pytest
 sys.modules.setdefault("dotenv", types.SimpleNamespace(load_dotenv=lambda *args, **kwargs: None))
 sys.modules.setdefault("structlog", types.SimpleNamespace(get_logger=lambda: types.SimpleNamespace()))
 
-fastapi_module = sys.modules.get("fastapi") or types.ModuleType("fastapi")
+if "fastapi" not in sys.modules:
+    fastapi_module = types.ModuleType("fastapi")
 
+    class UploadFile:
+        def __init__(self, *args, **kwargs):
+            pass
 
-class UploadFile:
-    def __init__(self, *args, **kwargs):
-        pass
-
-
-fastapi_module.UploadFile = UploadFile
-sys.modules["fastapi"] = fastapi_module
+    fastapi_module.UploadFile = UploadFile
+    sys.modules["fastapi"] = fastapi_module
 
 if "aiofiles" not in sys.modules:
     aiofiles_stub = types.ModuleType("aiofiles")

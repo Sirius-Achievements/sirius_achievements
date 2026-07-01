@@ -7,23 +7,23 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-fastapi_module = sys.modules.get("fastapi") or types.ModuleType("fastapi")
+if "fastapi" not in sys.modules:
+    fastapi_module = types.ModuleType("fastapi")
 
+    class HTTPException(Exception):
+        def __init__(self, status_code: int, detail: str):
+            super().__init__(detail)
+            self.status_code = status_code
+            self.detail = detail
 
-class HTTPException(Exception):
-    def __init__(self, status_code: int, detail: str):
-        super().__init__(detail)
-        self.status_code = status_code
-        self.detail = detail
+    fastapi_module.HTTPException = HTTPException
+    sys.modules["fastapi"] = fastapi_module
 
-
-fastapi_module.HTTPException = HTTPException
-sys.modules["fastapi"] = fastapi_module
-
-sqlalchemy_module = sys.modules.get("sqlalchemy") or types.ModuleType("sqlalchemy")
-sqlalchemy_module.desc = getattr(sqlalchemy_module, "desc", lambda value: value)
-sqlalchemy_module.select = getattr(sqlalchemy_module, "select", lambda value: value)
-sys.modules["sqlalchemy"] = sqlalchemy_module
+if "sqlalchemy" not in sys.modules:
+    sqlalchemy_module = types.ModuleType("sqlalchemy")
+    sqlalchemy_module.desc = lambda value: value
+    sqlalchemy_module.select = lambda value: value
+    sys.modules["sqlalchemy"] = sqlalchemy_module
 
 if "app.repositories.admin.user_token_repository" not in sys.modules:
     repo_module = types.ModuleType("app.repositories.admin.user_token_repository")

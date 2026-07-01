@@ -15,9 +15,9 @@ def tmp_dir():
 def make_upload_file(header: bytes, size: int = None):
     """Create a mock UploadFile."""
     mock = AsyncMock()
-    content = header + b'\x00' * ((size or len(header)) - len(header))
+    effective_size = size or len(header)
+    content = header + b'\x00' * (effective_size - len(header))
 
-    read_calls = [0]
     buffer = BytesIO(content)
 
     async def mock_read(n=-1):
@@ -32,6 +32,8 @@ def make_upload_file(header: bytes, size: int = None):
     mock.read = mock_read
     mock.seek = mock_seek
     mock.file = BytesIO(content)
+    mock.size = effective_size
+    mock.filename = None
 
     return mock
 

@@ -12,30 +12,27 @@ sys.modules.setdefault(
     ),
 )
 
-fastapi_module = sys.modules.get("fastapi") or types.ModuleType("fastapi")
+if "fastapi" not in sys.modules:
+    fastapi_module = types.ModuleType("fastapi")
 
+    class BackgroundTasks:
+        def add_task(self, *args, **kwargs):
+            return None
 
-class BackgroundTasks:
-    def add_task(self, *args, **kwargs):
-        return None
+    class HTTPException(Exception):
+        def __init__(self, status_code: int, detail: str):
+            super().__init__(detail)
+            self.status_code = status_code
+            self.detail = detail
 
+    class UploadFile:
+        def __init__(self, *args, **kwargs):
+            pass
 
-class HTTPException(Exception):
-    def __init__(self, status_code: int, detail: str):
-        super().__init__(detail)
-        self.status_code = status_code
-        self.detail = detail
-
-
-class UploadFile:
-    def __init__(self, *args, **kwargs):
-        pass
-
-
-fastapi_module.BackgroundTasks = BackgroundTasks
-fastapi_module.HTTPException = HTTPException
-fastapi_module.UploadFile = UploadFile
-sys.modules["fastapi"] = fastapi_module
+    fastapi_module.BackgroundTasks = BackgroundTasks
+    fastapi_module.HTTPException = HTTPException
+    fastapi_module.UploadFile = UploadFile
+    sys.modules["fastapi"] = fastapi_module
 
 if "jinja2" not in sys.modules:
     jinja2_module = types.ModuleType("jinja2")
@@ -187,7 +184,7 @@ def auth_service():
 
 def test_authenticate_user_not_found(auth_service, monkeypatch):
     monkeypatch.setattr("app.services.auth_service.rate_limiter.is_limited", AsyncMock(return_value=False))
-    monkeypatch.setattr("app.services.auth_service.rate_limiter.increment", AsyncMock())
+    monkeypatch.setattr("app.services.auth_service.rate_limiter.increment", AsyncMock(return_value=1))
 
     result = asyncio.run(auth_service.authenticate("unknown@example.com", "password", ip="127.0.0.1"))
 
@@ -199,6 +196,7 @@ def test_authenticate_success_resets_rate_limit(auth_service, monkeypatch):
     user = _make_user()
     auth_service.repository.get_by_email = AsyncMock(return_value=user)
     monkeypatch.setattr("app.services.auth_service.rate_limiter.is_limited", AsyncMock(return_value=False))
+    monkeypatch.setattr("app.services.auth_service.rate_limiter.increment", AsyncMock(return_value=1))
     reset_mock = AsyncMock()
     monkeypatch.setattr("app.services.auth_service.rate_limiter.reset", reset_mock)
     monkeypatch.setattr(auth_service, "verify_password", lambda p, h: True)
