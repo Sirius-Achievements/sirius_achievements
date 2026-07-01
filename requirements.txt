@@ -54,7 +54,7 @@ python-dateutil==2.9.0.post0
 python-dotenv==1.1.1
 python-http-client==3.3.7
 PyJWT==2.12.1
-python-multipart==0.0.26
+python-multipart==0.0.31
 python-slugify==8.0.4
 PyYAML==6.0.2
 redis==7.4.0

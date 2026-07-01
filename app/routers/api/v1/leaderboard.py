@@ -18,7 +18,7 @@ from app.models.user import Users
 from app.utils.points import aggregated_gpa_bonus_expr
 from app.utils.education import AVAILABLE_EDUCATION_LEVELS, COURSE_MAPPING, GROUP_MAPPING
 
-from .serializers import serialize_user
+from .serializers import serialize_user, serialize_user_public
 
 router = APIRouter(prefix='/api/v1/leaderboard', tags=['api.v1.leaderboard'])
 
@@ -108,10 +108,11 @@ async def _build_leaderboard_payload(user: Users, db: AsyncSession, education_le
         if student.id == user.id:
             my_rank = index
             my_points = int(points or 0)
+        peer_view = serialize_user(student) if student.id == user.id else serialize_user_public(student)
         leaderboard.append(
             {
                 'rank': index,
-                'user': serialize_user(student),
+                'user': peer_view,
                 'total_points': int(points or 0),
                 'achievements_count': int(achievements_count or 0),
                 'is_me': student.id == user.id,

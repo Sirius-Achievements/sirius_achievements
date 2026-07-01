@@ -138,12 +138,12 @@ async def search_achievements(
 @router.post('')
 @router.post('/')
 async def create_achievement(
-    title: str = Form(...),
-    description: str | None = Form(None),
-    category: str = Form(...),
-    level: str = Form(...),
-    result: str | None = Form(None),
-    external_url: str | None = Form(None),
+    title: str = Form(..., min_length=1, max_length=200),
+    description: str | None = Form(None, max_length=2000),
+    category: str = Form(..., max_length=50),
+    level: str = Form(..., max_length=50),
+    result: str | None = Form(None, max_length=50),
+    external_url: str | None = Form(None, max_length=500),
     file: UploadFile | None = File(None),
     current_user=Depends(auth),
     service: AchievementService = Depends(get_service),
@@ -195,8 +195,8 @@ async def create_achievement(
 @router.put('/{achievement_id}/revise')
 async def revise_achievement(
     achievement_id: int,
-    title: str | None = Form(None),
-    description: str | None = Form(None),
+    title: str | None = Form(None, max_length=200),
+    description: str | None = Form(None, max_length=2000),
     file: UploadFile | None = File(None),
     current_user=Depends(auth),
     service: AchievementService = Depends(get_service),

@@ -86,3 +86,6 @@ static/spa/
 
 # GitHub Copilot / AI assistant configs
 .github/
+
+# claude-mem session dumps
+AGENTS.md

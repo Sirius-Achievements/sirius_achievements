@@ -103,8 +103,8 @@ async def list_tickets(
 @router.post('')
 @router.post('/')
 async def create_ticket(
-    subject: str = Form(...),
-    message: str = Form(...),
+    subject: str = Form(..., min_length=1, max_length=200),
+    message: str = Form(..., min_length=1, max_length=5000),
     file: UploadFile | None = File(default=None),
     current_user=Depends(auth),
     db: AsyncSession = Depends(get_db),
@@ -149,7 +149,7 @@ async def get_ticket(
 @router.post('/{ticket_id}/send')
 async def send_message(
     ticket_id: int,
-    text: str | None = Form(default=None),
+    text: str | None = Form(default=None, max_length=5000),
     file: UploadFile | None = File(default=None),
     current_user=Depends(auth),
     db: AsyncSession = Depends(get_db),

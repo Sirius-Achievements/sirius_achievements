@@ -1,10 +1,11 @@
 ﻿from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.infrastructure.database import get_db
 from app.middlewares.api_auth_middleware import auth, auth_optional
 from app.models.achievement import Achievement
@@ -13,12 +14,23 @@ from app.models.user import Users
 from app.utils import storage
 from app.utils.media_paths import guess_media_type, resolve_static_path
 from app.utils.points import aggregated_gpa_bonus_expr, calculate_gpa_bonus
+from app.utils.rate_limiter import rate_limiter
 
 from .serializers import serialize_achievement, serialize_user_public
 
 router = APIRouter(prefix='/api/v1/public', tags=['api.v1.public'])
 
 _STAFF_ROLES = (UserRole.MODERATOR, UserRole.SUPER_ADMIN)
+
+async def _enforce_public_rate_limit(request: Request, bucket: str) -> None:
+    client_ip = request.client.host if request.client else 'unknown'
+    rl_key = f'public_{bucket}:{client_ip}'
+    hits = int(await rate_limiter.increment(rl_key, settings.PUBLIC_PROFILE_TTL))
+    if hits > settings.PUBLIC_PROFILE_MAX_PER_MINUTE:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail='Слишком много запросов. Попробуйте позже.',
+        )
 
 
 def _can_view_documents(viewer: Users | None, student_id: int) -> bool:
@@ -32,9 +44,11 @@ def _can_view_documents(viewer: Users | None, student_id: int) -> bool:
 @router.get('/students/{student_id}')
 async def public_student_profile(
     student_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     viewer: Users | None = Depends(auth_optional),
 ):
+    await _enforce_public_rate_limit(request, 'profile')
     student = await db.get(Users, student_id)
     if not student or student.role != UserRole.STUDENT or student.status != UserStatus.ACTIVE:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Student not found.')
@@ -155,10 +169,12 @@ async def public_student_profile(
 async def public_document_preview(
     student_id: int,
     document_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     viewer: Users = Depends(auth),
 ):
     """Serve approved achievement documents. Only the owner or staff (mod/admin) may view."""
+    await _enforce_public_rate_limit(request, 'doc')
     if not _can_view_documents(viewer, student_id):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Access denied.')
 
