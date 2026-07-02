@@ -231,21 +231,26 @@ pipeline {
       }
     }
 
-    stage('Build VPS Web Image') {
+    stage('Build Web Image on PC and Load to VPS') {
       when {
         expression { env.SKIP_DEPLOY != 'true' }
       }
       steps {
-        sh '''
-          set -e
-          cd "$DEPLOY_DIR"
+        sshagent(credentials: [env.SSH_CREDENTIALS_ID]) {
+          sh '''#!/usr/bin/env bash
+            set -euo pipefail
 
-          compose() {
-            if docker compose version >/dev/null 2>&1; then docker compose "$@"; else docker-compose "$@"; fi
-          }
+            echo "Building web image on PC (keeps docker build CPU off the VPS)..."
+            ssh -o StrictHostKeyChecking=no "$PC_HOST" "
+              set -e
+              cd '$PC_DEPLOY_DIR'
+              docker build -t '$APP_IMAGE' -f Dockerfile .
+            "
 
-          APP_IMAGE="$APP_IMAGE" compose -f "$VPS_COMPOSE_FILE" build web
-        '''
+            echo "Streaming image $APP_IMAGE from PC to VPS over the VPN..."
+            ssh -o StrictHostKeyChecking=no "$PC_HOST" "docker save '$APP_IMAGE' | gzip -1" | gunzip | docker load
+          '''
+        }
       }
     }
 
