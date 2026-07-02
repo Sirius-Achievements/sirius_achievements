@@ -78,3 +78,37 @@ async def test_remaining(limiter, mock_redis):
 async def test_remaining_no_attempts(limiter, mock_redis):
     mock_redis.get.return_value = None
     assert await limiter.remaining("key", 5) == 5
+
+
+# --- fail-open behaviour when Redis is unreachable ---
+
+@pytest.mark.asyncio
+async def test_increment_fails_open_when_redis_down(limiter):
+    limiter._incr_script = AsyncMock(side_effect=ConnectionError("redis down"))
+    # 0 means "no attempts counted" -> caller sees count <= limit -> request proceeds.
+    assert await limiter.increment("key", 900) == 0
+
+
+@pytest.mark.asyncio
+async def test_check_and_increment_fails_open_when_redis_down(limiter):
+    limiter._incr_script = AsyncMock(side_effect=ConnectionError("redis down"))
+    assert await limiter.check_and_increment("key", 5, 900) is False
+
+
+@pytest.mark.asyncio
+async def test_is_limited_fails_open_when_redis_down(limiter, mock_redis):
+    mock_redis.get = AsyncMock(side_effect=ConnectionError("redis down"))
+    assert await limiter.is_limited("key", 5, 900) is False
+
+
+@pytest.mark.asyncio
+async def test_reset_swallows_redis_errors(limiter, mock_redis):
+    mock_redis.delete = AsyncMock(side_effect=ConnectionError("redis down"))
+    # Must not raise — success path calls reset() and should never 500 on Redis outage.
+    await limiter.reset("key")
+
+
+@pytest.mark.asyncio
+async def test_remaining_fails_open_when_redis_down(limiter, mock_redis):
+    mock_redis.get = AsyncMock(side_effect=ConnectionError("redis down"))
+    assert await limiter.remaining("key", 5) == 5
