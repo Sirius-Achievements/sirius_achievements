@@ -1,4 +1,15 @@
 FROM jenkins/jenkins:lts
 USER root
-RUN apt-get update && apt-get install -y docker.io && rm -rf /var/lib/apt/lists/*
+# rsync + openssh-client are required by the deploy pipeline (Prepare VPS/PC Files,
+# sshagent). Without rsync the pipeline failed with "rsync: not found" (exit 127).
+RUN apt-get update && apt-get install -y docker.io rsync openssh-client && rm -rf /var/lib/apt/lists/*
+
+# docker.io does not ship the Compose v2 plugin; the 'Deploy VPS Web' stage runs
+# `docker compose` locally in this container, so install the compose CLI plugin.
+# Without it the stage failed with exit 127 (docker compose / docker-compose not found).
+ARG COMPOSE_VERSION=v5.3.0
+RUN mkdir -p /usr/libexec/docker/cli-plugins && \
+    curl -sSL "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-linux-x86_64" \
+      -o /usr/libexec/docker/cli-plugins/docker-compose && \
+    chmod +x /usr/libexec/docker/cli-plugins/docker-compose
 USER jenkins
