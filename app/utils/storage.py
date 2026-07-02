@@ -68,6 +68,11 @@ async def ensure_bucket() -> None:
         logger.warning("minio_ensure_bucket_failed", error=str(exc))
 
 
+async def ping() -> None:
+    """Readiness probe — raises if MinIO or the bucket is unreachable."""
+    await asyncio.to_thread(lambda: _client().head_bucket(Bucket=settings.MINIO_BUCKET))
+
+
 # ── Write ──────────────────────────────────────────────────────────────────────
 
 async def upload(data: bytes, key: str, content_type: str | None = None) -> str:

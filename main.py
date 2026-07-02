@@ -441,6 +441,9 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 @app.get("/health", include_in_schema=False)
 async def health_check():
+    # Liveness probe: intentionally checks ONLY the database so a transient
+    # Redis/MinIO blip does not make Jenkins refuse to deploy or thrash the
+    # container. Use /health/deep for a full dependency breakdown.
     try:
         async with async_session_maker() as session:
             from sqlalchemy import text
@@ -449,6 +452,44 @@ async def health_check():
         return JSONResponse({"status": "ok", "database": "connected"})
     except Exception:
         return JSONResponse({"status": "error", "database": "unavailable"}, status_code=503)
+
+
+@app.get("/health/deep", include_in_schema=False)
+async def health_deep():
+    # Readiness/diagnostic probe: reports every backing service separately so
+    # monitoring never shows a false green (today's incident: Redis down, login
+    # 500, but /health stayed 200 because it only checked the DB).
+    from sqlalchemy import text
+
+    from app.utils import storage
+    from app.utils.rate_limiter import get_redis
+
+    services: dict[str, str] = {}
+
+    try:
+        async with async_session_maker() as session:
+            await session.execute(text("SELECT 1"))
+        services["database"] = "ok"
+    except Exception:
+        services["database"] = "down"
+
+    try:
+        await asyncio.wait_for(get_redis().ping(), timeout=3)
+        services["redis"] = "ok"
+    except Exception:
+        services["redis"] = "down"
+
+    try:
+        await asyncio.wait_for(storage.ping(), timeout=5)
+        services["minio"] = "ok"
+    except Exception:
+        services["minio"] = "down"
+
+    all_ok = all(status == "ok" for status in services.values())
+    return JSONResponse(
+        {"status": "ok" if all_ok else "degraded", "services": services},
+        status_code=200 if all_ok else 503,
+    )
 
 
 @app.websocket("/ws/notifications")
