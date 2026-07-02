@@ -34,11 +34,10 @@ pipeline {
     WEB_HEALTH_URL   = 'https://emercom.online/health'
 
     NOTIFY_EMAIL = 'efirkoumir@gmail.com,yaroslavroch2@gmail.com,matveys909@gmail.com,sh1tc0der@yandex.ru'
-
-    SKIP_DEPLOY = 'false'
-    IMAGE_TAG   = ''
-    APP_IMAGE   = ''
-    AI_IMAGE    = ''
+    // NOTE: SKIP_DEPLOY / IMAGE_TAG / APP_IMAGE / AI_IMAGE are intentionally NOT
+    // declared here. In Declarative Pipeline a var declared in environment{} cannot
+    // be reliably reassigned via env.X in a script block (reads back null), which is
+    // why tag detection produced "sirius-app:null". They are set only in 'Check Tag'.
   }
 
   stages {
@@ -72,13 +71,14 @@ pipeline {
             return
           }
 
+          env.SKIP_DEPLOY = 'false'
           env.IMAGE_TAG = exactTag
-          env.APP_IMAGE = "${env.APP_IMAGE_BASE}:${env.IMAGE_TAG}"
-          env.AI_IMAGE  = "${env.AI_IMAGE_BASE}:${env.IMAGE_TAG}"
+          env.APP_IMAGE = "${env.APP_IMAGE_BASE}:${exactTag}"
+          env.AI_IMAGE  = "${env.AI_IMAGE_BASE}:${exactTag}"
 
-          currentBuild.displayName = "#${env.BUILD_NUMBER} ${env.IMAGE_TAG}"
-          currentBuild.description = "Deploy tag ${env.IMAGE_TAG}"
-          echo "Tag found: ${env.IMAGE_TAG}. Starting deployment."
+          currentBuild.displayName = "#${env.BUILD_NUMBER} ${exactTag}"
+          currentBuild.description = "Deploy tag ${exactTag}"
+          echo "Tag found: ${exactTag}. Starting deployment."
         }
       }
     }
