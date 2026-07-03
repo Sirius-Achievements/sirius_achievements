@@ -10,6 +10,7 @@ export interface ReportParams {
   student_id?: string
   student_ids?: string[]
   category?: string
+  categories?: string[]
   status?: string
 }
 
@@ -31,6 +32,10 @@ function paramsToPayload(params: ReportParams | URLSearchParams) {
   params.forEach((value, key) => {
     if (key === 'student_ids') {
       payload.student_ids = [...(payload.student_ids ?? []), value]
+      return
+    }
+    if (key === 'categories') {
+      payload.categories = [...(payload.categories ?? []), value]
       return
     }
     ;(payload as Record<string, string | string[]>)[key] = value

@@ -31,7 +31,18 @@ class ReportExportPayload(BaseModel):
     student_id: int | None = None
     student_ids: list[int] | None = None
     category: str | None = None
+    categories: list[str] | None = None
     status: str | None = None
+
+
+def _selected_categories(category: str | None, categories: list[str] | None) -> list[str]:
+    """Merge single + multi category inputs into a clean allowlist (empty = all)."""
+    values: list[str] = []
+    if categories:
+        values.extend(categories)
+    if category and category != 'all':
+        values.append(category)
+    return [item for item in dict.fromkeys(values) if item and item != 'all']
 
 
 def _parse_date(value: str | None, *, end: bool = False):
@@ -158,6 +169,7 @@ async def export_report_post(
         student_id=payload.student_id,
         student_ids=payload.student_ids,
         category=payload.category,
+        categories=payload.categories,
         status_filter=payload.status,
         current_user=current_user,
         db=db,
@@ -176,11 +188,13 @@ async def export_report(
     student_id: int | None = Query(default=None),
     student_ids: list[int] | None = Query(default=None),
     category: str | None = Query(default=None),
+    categories: list[str] | None = Query(default=None),
     status_filter: str | None = Query(default=None, alias='status'),
     current_user=Depends(_require_staff),
     db: AsyncSession = Depends(get_db),
 ):
     selected_student_ids = _selected_student_ids(student_id, student_ids)
+    selected_categories = _selected_categories(category, categories)
     if report_type in {'moderation', 'documents'}:
         stmt = (
             select(Achievement, Users)
@@ -191,8 +205,8 @@ async def export_report(
             stmt = stmt.filter(Achievement.status == AchievementStatus.PENDING)
         if status_filter and status_filter != 'all':
             stmt = stmt.filter(Achievement.status == status_filter)
-        if category and category != 'all':
-            stmt = stmt.filter(Achievement.category == category)
+        if selected_categories:
+            stmt = stmt.filter(Achievement.category.in_(selected_categories))
         if selected_student_ids:
             stmt = stmt.filter(Achievement.user_id.in_(selected_student_ids))
         stmt = _apply_date(stmt, Achievement.created_at, date_from, date_to, period)
@@ -219,9 +233,14 @@ async def export_report(
     if report_type in {'leaderboard', 'students'}:
         achievement_points = func.coalesce(func.sum(Achievement.points), 0)
         total_points = (achievement_points + aggregated_gpa_bonus_expr(Users.session_gpa)).label('total_points')
+        # Ranking counts only approved achievements; if categories are selected the
+        # points/docs reflect just those directions ("кто набрал больше в Спорт+Наука").
+        join_condition = (Users.id == Achievement.user_id) & (Achievement.status == AchievementStatus.APPROVED)
+        if selected_categories:
+            join_condition = join_condition & Achievement.category.in_(selected_categories)
         stmt = (
             select(Users, total_points, func.count(Achievement.id).label('docs_count'))
-            .outerjoin(Achievement, (Users.id == Achievement.user_id) & (Achievement.status == AchievementStatus.APPROVED))
+            .outerjoin(Achievement, join_condition)
             .filter(Users.role == UserRole.STUDENT, Users.status == UserStatus.ACTIVE)
             .group_by(Users.id)
             .order_by(desc('total_points'), desc('docs_count'))
@@ -260,6 +279,8 @@ async def export_report(
         stmt = select(*columns).join(Users, Achievement.user_id == Users.id)
         stmt = _apply_date(stmt, Achievement.created_at, date_from, date_to, period)
         stmt = _scope_users(stmt, current_user, education_level, course, group)
+        if selected_categories:
+            stmt = stmt.filter(Achievement.category.in_(selected_categories))
         if selected_student_ids:
             stmt = stmt.filter(Users.id.in_(selected_student_ids))
         if report_type == 'groups':

@@ -8,30 +8,27 @@ import { coursesForEducationLevel, groupsForEducationLevel } from '@/utils/label
 
 const EDUCATION_LEVELS = ['Специалитет']
 
-const REPORT_TYPES: Array<{ value: string; label: string; hint: string }> = [
-  { value: 'moderation', label: 'Очередь модерации', hint: 'Документы, ожидающие проверки модератором' },
-  { value: 'documents', label: 'Документы', hint: 'Полный реестр документов с фильтрами по статусам' },
-  { value: 'categories', label: 'По направлениям', hint: 'Сводка по категориям и уровням достижений' },
-  { value: 'leaderboard', label: 'Рейтинг', hint: 'Рейтинг студентов с баллами и количеством документов' },
-  { value: 'students', label: 'По студентам', hint: 'Выгрузка по студентам, курсам и группам' },
-  { value: 'groups', label: 'По группам', hint: 'Агрегированная статистика по группам' },
-  { value: 'streams', label: 'По потокам', hint: 'Агрегированная статистика по потокам' },
-  { value: 'aggregate', label: 'Агрегированная', hint: 'Сводная статистика по группам и направлениям' },
-  { value: 'support', label: 'Обращения', hint: 'Обращения поддержки за выбранный период' },
+// Top-level "what are we exporting".
+type ReportObject = 'documents' | 'support' | 'leaderboard' | 'students'
+const OBJECTS: Array<{ value: ReportObject; label: string; hint: string }> = [
+  { value: 'documents', label: 'Документы', hint: 'Реестр достижений и сводки по ним' },
+  { value: 'support', label: 'Обращения', hint: 'Обращения поддержки за период' },
+  { value: 'leaderboard', label: 'Рейтинг', hint: 'Рейтинг студентов по баллам' },
+  { value: 'students', label: 'Люди', hint: 'Выгрузка по студентам' },
 ]
 
-// Which controls each report type exposes.
-type TypeConfig = { period: boolean; status?: 'achievement' | 'support'; category: boolean }
-const TYPE_CONFIG: Record<string, TypeConfig> = {
-  moderation: { period: true, category: true },
-  documents: { period: true, status: 'achievement', category: true },
-  categories: { period: true, category: true },
-  groups: { period: true, category: true },
-  streams: { period: true, category: true },
-  aggregate: { period: true, category: true },
-  leaderboard: { period: false, category: false },
-  students: { period: false, category: false },
-  support: { period: true, status: 'support', category: false },
+// The "разрез" (grouping) inside an object → the backend report_type it maps to.
+type Slice = { value: string; label: string; backend: string }
+const SLICES: Record<ReportObject, Slice[]> = {
+  documents: [
+    { value: 'list', label: 'Список', backend: 'documents' },
+    { value: 'groups', label: 'По группам', backend: 'groups' },
+    { value: 'streams', label: 'По потокам', backend: 'streams' },
+    { value: 'categories', label: 'По направлениям', backend: 'categories' },
+  ],
+  support: [{ value: 'list', label: 'Список', backend: 'support' }],
+  leaderboard: [{ value: 'list', label: 'Рейтинг', backend: 'leaderboard' }],
+  students: [{ value: 'list', label: 'Список', backend: 'students' }],
 }
 
 const ACHIEVEMENT_STATUSES: Array<[string, string]> = [
@@ -61,8 +58,20 @@ const inputClass =
   'w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-700 focus:bg-surface focus:border-indigo-600 outline-none transition-all disabled:opacity-50'
 const labelClass = 'block text-[10px] font-bold text-slate-500 uppercase mb-1 tracking-wider'
 
+function controlsFor(object: ReportObject, slice: string) {
+  const isDocList = object === 'documents' && slice === 'list'
+  return {
+    period: object === 'documents' || object === 'support',
+    status: object === 'support' ? 'support' : isDocList ? 'achievement' : null,
+    // Category (multi) applies to documents (all slices) and to ranking/people
+    // where it means "points earned in the selected directions".
+    category: object === 'documents' || object === 'leaderboard' || object === 'students',
+  } as const
+}
+
 export function ReportExportPanel() {
-  const [reportType, setReportType] = useState('moderation')
+  const [reportObject, setReportObject] = useState<ReportObject>('documents')
+  const [slice, setSlice] = useState('list')
 
   const [periodMode, setPeriodMode] = useState<'quick' | 'custom'>('quick')
   const [period, setPeriod] = useState('all')
@@ -74,7 +83,7 @@ export function ReportExportPanel() {
   const [group, setGroup] = useState('all')
 
   const [status, setStatus] = useState('all')
-  const [category, setCategory] = useState('all')
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([])
 
   const [studentMode, setStudentMode] = useState<'scope' | 'specific'>('scope')
   const [scopeList, setScopeList] = useState<ScopeStudent[]>([])
@@ -88,7 +97,9 @@ export function ReportExportPanel() {
   const [isExporting, setIsExporting] = useState(false)
   const [error, setError] = useState('')
 
-  const config = TYPE_CONFIG[reportType] ?? { period: true, category: false }
+  const slices = SLICES[reportObject]
+  const backendType = slices.find((s) => s.value === slice)?.backend ?? slices[0].backend
+  const config = controlsFor(reportObject, slice)
 
   const courseOptions = educationLevel !== 'all' ? coursesForEducationLevel(educationLevel) : []
   const groupOptions =
@@ -98,11 +109,15 @@ export function ReportExportPanel() {
         : groupsForEducationLevel(educationLevel)
       : []
 
-  // Reset status/category when they no longer apply to the chosen type.
+  // Reset slice + type-specific filters when the object changes.
+  useEffect(() => {
+    setSlice(SLICES[reportObject][0].value)
+    setStatus('all')
+  }, [reportObject])
+
   useEffect(() => {
     setStatus('all')
-    setCategory('all')
-  }, [reportType])
+  }, [slice])
 
   // Load the scope student list when in "Охват" mode and a level is chosen.
   useEffect(() => {
@@ -122,7 +137,7 @@ export function ReportExportPanel() {
       .then((res) => {
         if (!active) return
         setScopeList(res.data.students)
-        setExcludedIds(new Set()) // fresh scope → everyone included by default
+        setExcludedIds(new Set())
       })
       .catch(() => {
         if (active) setScopeList([])
@@ -158,7 +173,6 @@ export function ReportExportPanel() {
   }, [specificQuery, specificStudents])
 
   const includedCount = scopeList.length - excludedIds.size
-
   const statusOptions = config.status === 'support' ? SUPPORT_STATUSES : ACHIEVEMENT_STATUSES
 
   const toggleExcluded = (id: number) => {
@@ -168,6 +182,12 @@ export function ReportExportPanel() {
       else next.add(id)
       return next
     })
+  }
+
+  const toggleCategory = (value: string) => {
+    setSelectedCategories((current) =>
+      current.includes(value) ? current.filter((c) => c !== value) : [...current, value],
+    )
   }
 
   const params = useMemo(() => {
@@ -183,29 +203,23 @@ export function ReportExportPanel() {
     }
 
     if (config.status && status !== 'all') p.set('status', status)
-    if (config.category && category !== 'all') p.set('category', category)
+    if (config.category) selectedCategories.forEach((c) => p.append('categories', c))
 
     if (studentMode === 'specific') {
-      // Concrete people, regardless of stream/course scope.
       specificStudents.forEach((s) => p.append('student_ids', String(s.id)))
     } else {
-      // Scope mode: level/course/group scope the report; only send explicit ids
-      // when the user has deselected somebody from the loaded list.
       if (educationLevel !== 'all') p.set('education_level', educationLevel)
       if (course !== '0') p.set('course', course)
       if (group !== 'all') p.set('group', group)
       if (excludedIds.size > 0) {
-        scopeList
-          .filter((s) => !excludedIds.has(s.id))
-          .forEach((s) => p.append('student_ids', String(s.id)))
+        scopeList.filter((s) => !excludedIds.has(s.id)).forEach((s) => p.append('student_ids', String(s.id)))
       }
     }
     return p
-  }, [config, periodMode, period, dateFrom, dateTo, status, category, studentMode, specificStudents, educationLevel, course, group, excludedIds, scopeList])
+  }, [config, periodMode, period, dateFrom, dateTo, status, selectedCategories, studentMode, specificStudents, educationLevel, course, group, excludedIds, scopeList])
 
   const handleDownload = async () => {
     setError('')
-    // Guard: scope mode with everyone deselected would produce an empty file.
     if (studentMode === 'scope' && scopeList.length > 0 && includedCount === 0) {
       setError('Выберите хотя бы одного студента или переключитесь на «Все».')
       return
@@ -216,12 +230,12 @@ export function ReportExportPanel() {
     }
     setIsExporting(true)
     try {
-      const response = await reportsApi.exportCsv(reportType, params)
+      const response = await reportsApi.exportCsv(backendType, params)
       const blob = new Blob([response.data as BlobPart], { type: 'text/csv;charset=utf-8;' })
       const url = window.URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
-      link.download = `${reportType}_report.csv`
+      link.download = `${backendType}_report.csv`
       document.body.appendChild(link)
       link.click()
       link.remove()
@@ -233,7 +247,7 @@ export function ReportExportPanel() {
     }
   }
 
-  const activeHint = REPORT_TYPES.find((t) => t.value === reportType)?.hint ?? ''
+  const activeHint = OBJECTS.find((o) => o.value === reportObject)?.hint ?? ''
 
   return (
     <div className="bg-surface p-5 rounded-xl border border-slate-200 shadow-sm">
@@ -241,50 +255,94 @@ export function ReportExportPanel() {
         <h3 className="text-sm font-semibold text-slate-800">Экспорт отчётов (CSV)</h3>
       </div>
 
-      {/* Report type */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
-        <div>
-          <label className={labelClass}>Тип отчёта</label>
-          <select value={reportType} onChange={(e) => setReportType(e.target.value)} className={inputClass}>
-            {REPORT_TYPES.map((t) => (
-              <option key={t.value} value={t.value}>
-                {t.label}
+      {/* Object tabs */}
+      <div className="mb-4">
+        <label className={labelClass}>Что выгружаем</label>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 rounded-xl border border-slate-200 bg-surface p-1">
+          {OBJECTS.map((o) => (
+            <button
+              key={o.value}
+              type="button"
+              onClick={() => setReportObject(o.value)}
+              className={`rounded-lg px-3 py-2 text-center text-xs font-semibold transition-colors ${reportObject === o.value ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-50'}`}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Slice (разрез) — only when the object has more than one */}
+      {slices.length > 1 ? (
+        <div className="mb-4">
+          <label className={labelClass}>Разрез</label>
+          <div className="inline-flex flex-wrap gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1">
+            {slices.map((s) => (
+              <button
+                key={s.value}
+                type="button"
+                onClick={() => setSlice(s.value)}
+                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${slice === s.value ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {/* Status (single) */}
+      {config.status ? (
+        <div className="mb-4 max-w-xs">
+          <label className={labelClass}>{config.status === 'support' ? 'Состояние обращений' : 'Статус документов'}</label>
+          <select value={status} onChange={(e) => setStatus(e.target.value)} className={inputClass}>
+            {statusOptions.map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
               </option>
             ))}
           </select>
         </div>
+      ) : null}
 
-        {/* Type-specific: status */}
-        {config.status ? (
-          <div>
-            <label className={labelClass}>{config.status === 'support' ? 'Состояние обращений' : 'Статус документов'}</label>
-            <select value={status} onChange={(e) => setStatus(e.target.value)} className={inputClass}>
-              {statusOptions.map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
+      {/* Category (multi, combinable) */}
+      {config.category ? (
+        <div className="mb-4">
+          <div className="flex items-center justify-between mb-1">
+            <label className={labelClass + ' mb-0'}>Направления {selectedCategories.length > 0 ? `(${selectedCategories.length})` : '— все'}</label>
+            {selectedCategories.length > 0 ? (
+              <button type="button" onClick={() => setSelectedCategories([])} className="text-[11px] font-semibold text-slate-500 hover:underline">
+                Сбросить
+              </button>
+            ) : null}
           </div>
-        ) : null}
-
-        {/* Type-specific: category */}
-        {config.category ? (
-          <div>
-            <label className={labelClass}>Направление</label>
-            <select value={category} onChange={(e) => setCategory(e.target.value)} className={inputClass}>
-              <option value="all">Все направления</option>
-              {CATEGORY_OPTIONS.map((c) => (
-                <option key={c} value={c}>
+          <div className="flex flex-wrap gap-1.5">
+            {CATEGORY_OPTIONS.map((c) => {
+              const active = selectedCategories.includes(c)
+              return (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => toggleCategory(c)}
+                  className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-[11px] font-medium transition-colors ${active ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-indigo-300'}`}
+                >
+                  {active ? (
+                    <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" />
+                    </svg>
+                  ) : null}
                   {c}
-                </option>
-              ))}
-            </select>
+                </button>
+              )
+            })}
           </div>
-        ) : null}
-      </div>
+          {(reportObject === 'leaderboard' || reportObject === 'students') && selectedCategories.length > 0 ? (
+            <p className="mt-1.5 text-[11px] text-slate-400">Баллы и рейтинг считаются только по выбранным направлениям.</p>
+          ) : null}
+        </div>
+      ) : null}
 
-      {/* Period — only for types that use it */}
+      {/* Period toggle */}
       {config.period ? (
         <div className="mb-4">
           <div className="flex items-center gap-2 mb-2">
@@ -422,11 +480,7 @@ export function ReportExportPanel() {
                         Выбрать всех
                       </button>
                       <span className="text-slate-300">·</span>
-                      <button
-                        type="button"
-                        onClick={() => setExcludedIds(new Set(scopeList.map((s) => s.id)))}
-                        className="text-slate-500 hover:underline"
-                      >
+                      <button type="button" onClick={() => setExcludedIds(new Set(scopeList.map((s) => s.id)))} className="text-slate-500 hover:underline">
                         Снять всех
                       </button>
                     </div>
