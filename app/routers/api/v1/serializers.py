@@ -147,7 +147,7 @@ def serialize_support_ticket(ticket, *, include_messages: bool = False):
 
 
 def serialize_user_public(user):
-    """Public profile serializer — no email, phone, or internal fields."""
+    """Public profile serializer — no email, phone, resume, or internal fields."""
     return {
         'id': user.id,
         'first_name': user.first_name,
@@ -157,7 +157,6 @@ def serialize_user_public(user):
         'course': user.course,
         'study_group': user.study_group,
         'session_gpa': getattr(user, 'session_gpa', None),
-        'resume_text': getattr(user, 'resume_text', None),
     }
 
 

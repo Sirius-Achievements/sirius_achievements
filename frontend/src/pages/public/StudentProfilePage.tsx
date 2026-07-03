@@ -490,12 +490,6 @@ function StudentProfilePageInner() {
         </div>
       </div>
 
-      {data.student.resume_text ? (
-        <div className="mt-6 bg-surface rounded-2xl border border-slate-200 shadow-sm p-5">
-          <h3 className="text-sm font-semibold text-slate-700 mb-3">AI-сводка профиля</h3>
-          <div className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">{data.student.resume_text}</div>
-        </div>
-      ) : null}
 
       <p className="text-center text-xs text-slate-400 mt-8">Sirius.Achievements &copy; 2026</p>
 

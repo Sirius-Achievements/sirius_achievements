@@ -756,41 +756,20 @@ export function ProfilePage() {
                         </h3>
                         <p className="text-xs text-indigo-700/70 mt-1">Автоматический анализ всех подтвержденных достижений нейросетью.</p>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => void handleGenerateResume()}
-                        disabled={isGeneratingResume || !canGenerate}
-                        className="shrink-0 px-5 py-2.5 bg-indigo-600 text-white hover:bg-indigo-700 rounded-lg text-sm font-medium transition-colors inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm whitespace-nowrap"
-                      >
-                        {isGeneratingResume ? (
-                          <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                          </svg>
-                        ) : (
-                          <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
-                          </svg>
-                        )}
-                        {resumeText ? 'Обновить сводку' : 'Сгенерировать сводку'}
-                      </button>
+                      <span className="shrink-0 inline-flex items-center gap-1.5 rounded-full border border-indigo-200 bg-indigo-100/70 px-3 py-1 text-[11px] font-semibold text-indigo-700 whitespace-nowrap">
+                        Скоро — в разработке
+                      </span>
                     </div>
-
-                    {!canGenerate && generateReason && (
-                      <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
-                        {generateReason}
-                      </p>
-                    )}
 
                     {resumeText ? (
                       <div className="bg-surface border border-indigo-100/80 rounded-lg p-4 text-sm text-slate-800 whitespace-pre-wrap leading-relaxed shadow-sm">
                         {resumeText}
                       </div>
-                    ) : !isGeneratingResume ? (
+                    ) : (
                       <div className="text-center py-6 bg-surface/50 border border-indigo-100 border-dashed rounded-lg text-indigo-400 text-xs mt-2">
-                        Здесь появится ваше профессиональное резюме.<br />Нажмите кнопку выше, чтобы ИИ проанализировал ваши грамоты.
+                        Резюме будет формироваться автоматически на основе ваших подтверждённых достижений.<br />Функция скоро появится.
                       </div>
-                    ) : null}
+                    )}
                   </div>
                 </div>
               )}

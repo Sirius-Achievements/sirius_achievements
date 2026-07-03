@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from app.routers.api.v1.serializers import serialize_user_public
 
 
-def test_serialize_user_public_includes_resume_text_without_private_fields():
+def test_serialize_user_public_excludes_resume_and_private_fields():
     user = SimpleNamespace(
         id=7,
         first_name="Roch",
@@ -29,7 +29,8 @@ def test_serialize_user_public_includes_resume_text_without_private_fields():
         "course": 3,
         "study_group": "B-31",
         "session_gpa": "4.8",
-        "resume_text": "Краткая AI-сводка профиля",
     }
+    # Resume is no longer exposed on the public profile, nor are private fields.
+    assert "resume_text" not in result
     assert "email" not in result
     assert "phone_number" not in result
