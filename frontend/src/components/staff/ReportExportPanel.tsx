@@ -40,14 +40,12 @@ const ACHIEVEMENT_STATUSES: Array<[string, string]> = [
   ['approved', 'Одобрено'],
   ['rejected', 'Отклонено'],
   ['revision', 'На доработке'],
-  ['archived', 'Архив'],
 ]
 const SUPPORT_STATUSES: Array<[string, string]> = [
   ['all', 'Все обращения'],
   ['open', 'Открытые'],
   ['in_progress', 'В работе'],
   ['closed', 'Закрытые'],
-  ['archived', 'Архив'],
 ]
 
 const CATEGORY_OPTIONS = Object.values(AchievementCategory)

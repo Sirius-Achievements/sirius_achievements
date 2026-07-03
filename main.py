@@ -420,12 +420,21 @@ def _error_page(status_code: int, title: str, message: str) -> HTMLResponse:
     )
 
 
+def _wants_json(request: Request) -> bool:
+    # API / XHR clients must get machine-readable JSON errors (with the real
+    # `detail`) so the SPA can show them; only browser navigation gets the HTML page.
+    return request.url.path.startswith("/api/") or "application/json" in request.headers.get("accept", "")
+
+
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     if 300 <= exc.status_code < 400:
         location = exc.headers.get("Location") if exc.headers else None
         if location:
             return RedirectResponse(url=location, status_code=exc.status_code)
+    if _wants_json(request):
+        detail = exc.detail if isinstance(exc.detail, str) and exc.detail else "Не удалось обработать запрос."
+        return JSONResponse({"detail": detail}, status_code=exc.status_code)
     if exc.status_code == 404:
         return _error_page(404, "Страница не найдена", "Такого адреса больше нет или он был перенесен.")
     if exc.status_code == 403:
@@ -436,6 +445,8 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.error("global_error", error=str(exc), exc_info=True)
+    if _wants_json(request):
+        return JSONResponse({"detail": "Внутренняя ошибка сервера."}, status_code=500)
     return _error_page(500, "Внутренняя ошибка сервера", "Мы уже получили информацию об ошибке и разберемся с ней.")
 
 

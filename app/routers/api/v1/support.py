@@ -123,7 +123,7 @@ async def create_ticket(
             {'ticket_id': ticket.id, 'action': 'created'},
         )
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail='Не удалось создать обращение. Проверьте данные и повторите попытку.') from exc
+        raise HTTPException(status_code=400, detail=str(exc) or 'Не удалось создать обращение. Проверьте данные и повторите попытку.') from exc
 
     ticket = await SupportTicketRepository(db).find_with_messages(ticket.id)
     return {'ticket': serialize_support_ticket(ticket, include_messages=True)}
@@ -174,7 +174,7 @@ async def send_message(
             {'ticket_id': ticket_id, 'action': 'student_reply'},
         )
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail='Не удалось отправить сообщение. Проверьте данные и повторите попытку.') from exc
+        raise HTTPException(status_code=400, detail=str(exc) or 'Не удалось отправить сообщение. Проверьте данные и повторите попытку.') from exc
 
     updated_ticket = await ticket_repo.find_with_messages(ticket_id)
     return {

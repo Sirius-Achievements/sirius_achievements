@@ -646,7 +646,7 @@ async def create_support_message_for_user(
             session_duration=session_duration,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail='Не удалось отправить сообщение пользователю.') from exc
+        raise HTTPException(status_code=400, detail=str(exc) or 'Не удалось отправить сообщение пользователю.') from exc
 
     notification = make_notification(
         user_id=target_user.id,

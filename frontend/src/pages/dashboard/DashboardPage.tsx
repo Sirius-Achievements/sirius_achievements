@@ -12,7 +12,7 @@ import { coursesForEducationLevel, groupsForEducationLevel } from '@/utils/label
 
 const PERIODS = ['day', 'week', 'month', 'all'] as const
 function normalizePeriod(value: string | null) {
-  return PERIODS.includes((value ?? '') as (typeof PERIODS)[number]) ? (value as (typeof PERIODS)[number]) : 'day'
+  return PERIODS.includes((value ?? '') as (typeof PERIODS)[number]) ? (value as (typeof PERIODS)[number]) : 'all'
 }
 
 function periodDescription(period: string) {
