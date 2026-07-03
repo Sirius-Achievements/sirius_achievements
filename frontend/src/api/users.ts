@@ -9,6 +9,10 @@ export interface UsersParams {
   status?: string
   education_level?: string
   course?: string
+  roles?: string[]
+  statuses?: string[]
+  education_levels?: string[]
+  courses?: string[]
   sort_by?: string
 }
 

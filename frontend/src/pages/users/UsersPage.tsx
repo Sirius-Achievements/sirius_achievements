@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react'
 import { Link } from 'react-router-dom'
 
 import { moderationApi } from '@/api/moderation'
 import { usersApi } from '@/api/users'
+import { ChipMultiSelect } from '@/components/staff/ChipMultiSelect'
 import { SearchAutocompleteInput, type SearchSuggestionItem } from '@/components/staff/SearchAutocompleteInput'
 import { StaffSectionHeader } from '@/components/staff/StaffSectionHeader'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
@@ -43,10 +44,10 @@ export function UsersPage() {
   const [statuses, setStatuses] = useState<string[]>([])
   const [educationLevels, setEducationLevels] = useState<string[]>([])
   const [query, setQuery] = useState('')
-  const [role, setRole] = useState('')
-  const [status, setStatus] = useState('')
-  const [educationLevel, setEducationLevel] = useState('')
-  const [course, setCourse] = useState('')
+  const [roleSel, setRoleSel] = useState<string[]>([])
+  const [statusSel, setStatusSel] = useState<string[]>([])
+  const [eduSel, setEduSel] = useState<string[]>([])
+  const [courseSel, setCourseSel] = useState<string[]>([])
   const [sortBy, setSortBy] = useState('newest')
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
@@ -58,14 +59,23 @@ export function UsersPage() {
     () => ({
       page,
       query: query || undefined,
-      role: role || undefined,
-      status: status || undefined,
-      education_level: educationLevel || undefined,
-      course: course || undefined,
+      roles: roleSel.length ? roleSel : undefined,
+      statuses: statusSel.length ? statusSel : undefined,
+      education_levels: eduSel.length ? eduSel : undefined,
+      courses: courseSel.length ? courseSel : undefined,
       sort_by: sortBy,
     }),
-    [course, educationLevel, page, query, role, sortBy, status],
+    [courseSel, eduSel, page, query, roleSel, sortBy, statusSel],
   )
+
+  const toggleIn = (setter: Dispatch<SetStateAction<string[]>>) => (value: string) =>
+    setter((cur) => (cur.includes(value) ? cur.filter((x) => x !== value) : [...cur, value]))
+
+  const courseOptions = Array.from(
+    new Set((eduSel.length ? eduSel : educationLevels).flatMap((l) => coursesForEducationLevel(l))),
+  )
+    .sort((a, b) => a - b)
+    .map(String)
 
   const loadUsers = async () => {
     setIsLoading(true)
@@ -91,13 +101,13 @@ export function UsersPage() {
 
   useEffect(() => {
     setPage(1)
-  }, [query, role, status, educationLevel, course, sortBy])
+  }, [query, roleSel, statusSel, eduSel, courseSel, sortBy])
 
+  // Drop selected courses that are no longer offered by the chosen education levels.
   useEffect(() => {
-    if (!educationLevel || (course && !coursesForEducationLevel(educationLevel).includes(Number(course)))) {
-      setCourse('')
-    }
-  }, [course, educationLevel])
+    setCourseSel((cur) => cur.filter((c) => courseOptions.includes(c)))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eduSel])
 
   useEffect(() => {
     const trimmed = query.trim()
@@ -122,10 +132,10 @@ export function UsersPage() {
 
   const resetFilters = () => {
     setQuery('')
-    setRole('')
-    setStatus('')
-    setEducationLevel('')
-    setCourse('')
+    setRoleSel([])
+    setStatusSel([])
+    setEduSel([])
+    setCourseSel([])
     setSortBy('newest')
     setSuggestions([])
     setPage(1)
@@ -225,73 +235,22 @@ export function UsersPage() {
             </select>
           </div>
 
-          <div className="w-[calc(50%-0.375rem)] sm:w-[140px]">
-            <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Роль</label>
-            <select
-              value={role}
-              onChange={(event) => setRole(event.target.value)}
-              className="h-[38px] w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 outline-none transition-all focus:border-indigo-600 focus:bg-surface"
-            >
-              <option value="">Все роли</option>
-              {roles.map((item) => (
-                <option key={item} value={item}>
-                  {roleLabel(item)}
-                </option>
-              ))}
-            </select>
+          <div className="w-full">
+            <ChipMultiSelect label="Роль" options={roles} selected={roleSel} onToggle={toggleIn(setRoleSel)} labelFor={roleLabel} onReset={() => setRoleSel([])} />
           </div>
 
-          <div className="w-[calc(50%-0.375rem)] sm:w-[150px]">
-            <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-500">
-              Обучение
-            </label>
-            <select
-              value={educationLevel}
-              onChange={(event) => setEducationLevel(event.target.value)}
-              className="h-[38px] w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 outline-none transition-all focus:border-indigo-600 focus:bg-surface"
-            >
-              <option value="">Все</option>
-              {educationLevels.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
+          <div className="w-full">
+            <ChipMultiSelect label="Обучение" options={educationLevels} selected={eduSel} onToggle={toggleIn(setEduSel)} onReset={() => setEduSel([])} />
           </div>
 
-          <div className="w-[calc(33%-0.5rem)] sm:w-[96px]">
-            <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Курс</label>
-            <select
-              value={course}
-              onChange={(event) => setCourse(event.target.value)}
-              disabled={!educationLevel}
-              className="h-[38px] w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 outline-none transition-all focus:border-indigo-600 focus:bg-surface disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <option value="">{educationLevel ? 'Все' : 'Выберите обучение'}</option>
-              {coursesForEducationLevel(educationLevel).map((item) => (
-                <option key={item} value={String(item)}>
-                  {item}
-                </option>
-              ))}
-            </select>
-          </div>
+          {courseOptions.length > 0 ? (
+            <div className="w-full">
+              <ChipMultiSelect label="Курс" options={courseOptions} selected={courseSel} onToggle={toggleIn(setCourseSel)} labelFor={(c) => `${c} курс`} onReset={() => setCourseSel([])} />
+            </div>
+          ) : null}
 
-          <div className="w-[calc(33%-0.5rem)] sm:w-[140px]">
-            <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-500">
-              Статус
-            </label>
-            <select
-              value={status}
-              onChange={(event) => setStatus(event.target.value)}
-              className="h-[38px] w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 outline-none transition-all focus:border-indigo-600 focus:bg-surface"
-            >
-              <option value="">Все</option>
-              {statuses.map((item) => (
-                <option key={item} value={item}>
-                  {userStatusLabel(item)}
-                </option>
-              ))}
-            </select>
+          <div className="w-full">
+            <ChipMultiSelect label="Статус" options={statuses} selected={statusSel} onToggle={toggleIn(setStatusSel)} labelFor={userStatusLabel} onReset={() => setStatusSel([])} />
           </div>
 
           <div className="flex w-full gap-2 sm:w-auto">

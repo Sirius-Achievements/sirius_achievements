@@ -288,6 +288,10 @@ async def list_users(
     status: str | None = Query(default=None),
     education_level: str | None = Query(default=None),
     course: str | None = Query(default=None),
+    roles: list[str] | None = Query(default=None),
+    statuses: list[str] | None = Query(default=None),
+    education_levels: list[str] | None = Query(default=None),
+    courses: list[str] | None = Query(default=None),
     sort_by: str = Query(default='newest'),
     current_user=Depends(_check_admin_rights),
     db: AsyncSession = Depends(get_db),
@@ -295,6 +299,7 @@ async def list_users(
     limit = 10
     offset = (page - 1) * limit
     course_int = int(course) if course and str(course).isdigit() else None
+    course_ints = [int(c) for c in (courses or []) if str(c).isdigit()]
 
     stmt = select(Users).filter(Users.status != UserStatus.REJECTED)
 
@@ -313,13 +318,22 @@ async def list_users(
             )
         )
 
-    if role and role != 'all':
+    # Multi-select filters use IN (OR within a dimension); dimensions combine with AND.
+    if roles:
+        stmt = stmt.filter(Users.role.in_(roles))
+    elif role and role != 'all':
         stmt = stmt.filter(Users.role == role)
-    if status and status != 'all':
+    if statuses:
+        stmt = stmt.filter(Users.status.in_(statuses))
+    elif status and status != 'all':
         stmt = stmt.filter(Users.status == status)
-    if education_level and education_level != 'all':
+    if education_levels:
+        stmt = stmt.filter(Users.education_level.in_(education_levels))
+    elif education_level and education_level != 'all':
         stmt = stmt.filter(Users.education_level == education_level)
-    if course_int and course_int != 0:
+    if course_ints:
+        stmt = stmt.filter(Users.course.in_(course_ints))
+    elif course_int and course_int != 0:
         stmt = stmt.filter(Users.course == course_int)
 
     if sort_by == 'oldest':
