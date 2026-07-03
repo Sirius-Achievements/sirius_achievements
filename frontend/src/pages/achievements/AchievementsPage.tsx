@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 
 import { achievementsApi } from '@/api/achievements'
+import { documentsApi } from '@/api/documents'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { PaginationFooter } from '@/components/ui/PaginationFooter'
 import { useToast } from '@/hooks/useToast'
@@ -95,6 +96,20 @@ function emitPreview(item: Achievement) {
   if (item.external_url) {
     window.open(item.external_url, '_blank', 'noopener')
   }
+}
+
+async function downloadOwnDocument(item: Achievement) {
+  const response = await documentsApi.download(item.id)
+  const header = response.headers['content-type']
+  const contentType = typeof header === 'string' ? header : 'application/octet-stream'
+  const blob = response.data instanceof Blob ? response.data : new Blob([response.data as BlobPart], { type: contentType })
+  const link = document.createElement('a')
+  link.href = URL.createObjectURL(blob)
+  link.download = (item.file_path ?? '').split('/').pop() || `${item.title}.bin`
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(link.href)
 }
 
 function formatFileSize(size: number) {
@@ -555,26 +570,40 @@ export function AchievementsPage() {
                       }`}
                     >
                       <td className="px-5 py-3 text-center">
-                        <button
-                          type="button"
-                          onClick={() => emitPreview(item)}
-                          className="inline-flex w-8 h-8 rounded bg-indigo-50 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-700 transition-colors items-center justify-center"
-                        >
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth="2"
-                              d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                            />
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth="2"
-                              d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-                            />
-                          </svg>
-                        </button>
+                        <div className="inline-flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => emitPreview(item)}
+                            title="Просмотр"
+                            className="inline-flex w-8 h-8 rounded bg-indigo-50 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-700 transition-colors items-center justify-center"
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth="2"
+                                d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                              />
+                            </svg>
+                          </button>
+                          {item.file_path ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void downloadOwnDocument(item).catch(() =>
+                                  pushToast({ title: 'Не удалось скачать документ', tone: 'error' }),
+                                )
+                              }
+                              title="Скачать"
+                              className="inline-flex w-8 h-8 rounded bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-800 transition-colors items-center justify-center"
+                            >
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m5 6H7a2 2 0 01-2-2V5a2 2 0 012-2h10a2 2 0 012 2v12a2 2 0 01-2 2z" />
+                              </svg>
+                            </button>
+                          ) : null}
+                        </div>
                       </td>
                       <td className="px-5 py-3">
                         <div className="font-medium text-slate-800">{item.title}</div>
