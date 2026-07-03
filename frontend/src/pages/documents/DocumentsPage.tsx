@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react'
 import { Link } from 'react-router-dom'
 
 import { documentsApi } from '@/api/documents'
 import { moderationApi } from '@/api/moderation'
+import { ChipMultiSelect } from '@/components/staff/ChipMultiSelect'
 import { SearchAutocompleteInput, type SearchSuggestionItem } from '@/components/staff/SearchAutocompleteInput'
 import { StaffSectionHeader } from '@/components/staff/StaffSectionHeader'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
@@ -44,10 +45,10 @@ export function DocumentsPage() {
   const [categories, setCategories] = useState<string[]>([])
   const [levels, setLevels] = useState<string[]>([])
   const [query, setQuery] = useState('')
-  const [status, setStatus] = useState('')
-  const [category, setCategory] = useState('')
-  const [level, setLevel] = useState('')
-  const [result, setResult] = useState('')
+  const [statusSel, setStatusSel] = useState<string[]>([])
+  const [categorySel, setCategorySel] = useState<string[]>([])
+  const [levelSel, setLevelSel] = useState<string[]>([])
+  const [resultSel, setResultSel] = useState<string[]>([])
   const [sortBy, setSortBy] = useState('newest')
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
@@ -59,14 +60,17 @@ export function DocumentsPage() {
     () => ({
       page,
       query: query || undefined,
-      status: status || undefined,
-      category: category || undefined,
-      level: level || undefined,
-      result: result || undefined,
+      statuses: statusSel.length ? statusSel : undefined,
+      categories: categorySel.length ? categorySel : undefined,
+      levels: levelSel.length ? levelSel : undefined,
+      results: resultSel.length ? resultSel : undefined,
       sort_by: sortBy,
     }),
-    [category, level, page, query, result, sortBy, status],
+    [categorySel, levelSel, page, query, resultSel, sortBy, statusSel],
   )
+
+  const toggleIn = (setter: Dispatch<SetStateAction<string[]>>) => (value: string) =>
+    setter((cur) => (cur.includes(value) ? cur.filter((x) => x !== value) : [...cur, value]))
 
   const loadDocuments = async () => {
     setIsLoading(true)
@@ -92,7 +96,7 @@ export function DocumentsPage() {
 
   useEffect(() => {
     setPage(1)
-  }, [query, status, category, level, result, sortBy])
+  }, [query, statusSel, categorySel, levelSel, resultSel, sortBy])
 
   useEffect(() => {
     const trimmed = query.trim()
@@ -123,10 +127,10 @@ export function DocumentsPage() {
 
   const resetFilters = () => {
     setQuery('')
-    setStatus('')
-    setCategory('')
-    setLevel('')
-    setResult('')
+    setStatusSel([])
+    setCategorySel([])
+    setLevelSel([])
+    setResultSel([])
     setSortBy('newest')
     setSuggestions([])
     setPage(1)
@@ -242,72 +246,27 @@ export function DocumentsPage() {
             </select>
           </div>
 
-          <div className="w-full sm:w-[140px]">
-            <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-500">
-              Статус
-            </label>
-            <select
-              value={status}
-              onChange={(event) => setStatus(event.target.value)}
-              className="h-[38px] w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 outline-none transition-all focus:border-indigo-600 focus:bg-surface"
-            >
-              <option value="">Все</option>
-              {statuses.map((item) => (
-                <option key={item} value={item}>
-                  {achievementStatusLabel(item)}
-                </option>
-              ))}
-            </select>
+          <div className="w-full sm:basis-full">
+            <ChipMultiSelect
+              label="Статус"
+              options={statuses}
+              selected={statusSel}
+              onToggle={toggleIn(setStatusSel)}
+              labelFor={achievementStatusLabel}
+              onReset={() => setStatusSel([])}
+            />
           </div>
 
-          <div className="w-full sm:w-[140px]">
-            <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-500">
-              Категория
-            </label>
-            <select
-              value={category}
-              onChange={(event) => setCategory(event.target.value)}
-              className="h-[38px] w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 outline-none transition-all focus:border-indigo-600 focus:bg-surface"
-            >
-              <option value="">Все</option>
-              {categories.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
+          <div className="w-full sm:basis-full">
+            <ChipMultiSelect label="Категория" options={categories} selected={categorySel} onToggle={toggleIn(setCategorySel)} onReset={() => setCategorySel([])} />
           </div>
 
-          <div className="w-full sm:w-[140px]">
-            <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Уровень</label>
-            <select
-              value={level}
-              onChange={(event) => setLevel(event.target.value)}
-              className="h-[38px] w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 outline-none transition-all focus:border-indigo-600 focus:bg-surface"
-            >
-              <option value="">Все</option>
-              {levels.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
+          <div className="w-full sm:basis-full">
+            <ChipMultiSelect label="Уровень" options={levels} selected={levelSel} onToggle={toggleIn(setLevelSel)} onReset={() => setLevelSel([])} />
           </div>
 
-          <div className="w-full sm:w-[140px]">
-            <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Результат</label>
-            <select
-              value={result}
-              onChange={(event) => setResult(event.target.value)}
-              className="h-[38px] w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 outline-none transition-all focus:border-indigo-600 focus:bg-surface"
-            >
-              <option value="">Все</option>
-              {Object.values(AchievementResult).map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
+          <div className="w-full sm:basis-full">
+            <ChipMultiSelect label="Результат" options={Object.values(AchievementResult)} selected={resultSel} onToggle={toggleIn(setResultSel)} onReset={() => setResultSel([])} />
           </div>
 
           <div className="flex gap-2">

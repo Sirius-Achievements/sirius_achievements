@@ -8,6 +8,10 @@ export interface DocumentsParams {
   category?: string
   level?: string
   result?: string
+  statuses?: string[]
+  categories?: string[]
+  levels?: string[]
+  results?: string[]
   sort_by?: string
 }
 

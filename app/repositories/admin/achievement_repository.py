@@ -23,6 +23,10 @@ class AchievementRepository(BaseCrudRepository):
             owner_courses=None,
             owner_groups=None,
             owner_id: int | None = None,
+            statuses=None,
+            categories=None,
+            levels=None,
+            results=None,
     ):
         stmt = select(self.model).options(selectinload(self.model.user))
         if owner_education_level is not None or owner_courses or owner_groups or owner_id is not None:
@@ -47,18 +51,28 @@ class AchievementRepository(BaseCrudRepository):
                 (self.model.description.ilike(like_term))
             )
 
-        if status and status != "all":
+        # Multi-select filters use IN (OR within a dimension); different dimensions
+        # are separate filters and therefore combine with AND.
+        if statuses:
+            stmt = stmt.filter(self.model.status.in_(statuses))
+        elif status and status != "all":
             stmt = stmt.filter(self.model.status == status)
         else:
             stmt = stmt.filter(self.model.status != AchievementStatus.ARCHIVED)
 
-        if category and category != "all":
+        if categories:
+            stmt = stmt.filter(self.model.category.in_(categories))
+        elif category and category != "all":
             stmt = stmt.filter(self.model.category == category)
 
-        if level and level != "all":
+        if levels:
+            stmt = stmt.filter(self.model.level.in_(levels))
+        elif level and level != "all":
             stmt = stmt.filter(self.model.level == level)
 
-        if result and result != "all":
+        if results:
+            stmt = stmt.filter(self.model.result.in_(results))
+        elif result and result != "all":
             stmt = stmt.filter(self.model.result == result)
 
         if sort_by == "oldest":

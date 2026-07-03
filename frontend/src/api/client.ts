@@ -5,6 +5,9 @@ import { emitServerError } from '@/utils/serverErrorBus'
 const client = axios.create({
   baseURL: API_BASE,
   headers: { 'Content-Type': 'application/json' },
+  // Serialize array query params as repeated keys (statuses=a&statuses=b) to
+  // match FastAPI's list[str] = Query(...), not the bracketed a[]=... default.
+  paramsSerializer: { indexes: null },
 })
 
 function getCookieValue(name: string): string | null {
