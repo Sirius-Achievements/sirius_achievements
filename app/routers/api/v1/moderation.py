@@ -186,6 +186,9 @@ async def pending_achievements(
     category: str = Query(default=''),
     level: str = Query(default=''),
     result: str = Query(default=''),
+    categories: list[str] | None = Query(default=None),
+    levels: list[str] | None = Query(default=None),
+    results: list[str] | None = Query(default=None),
     sort_by: str = Query(default='oldest'),
     current_user=Depends(require_moderator),
     db: AsyncSession = Depends(get_db),
@@ -215,11 +218,17 @@ async def pending_achievements(
             )
         )
 
-    if category and category != 'all':
+    if categories:
+        stmt = stmt.filter(Achievement.category.in_(categories))
+    elif category and category != 'all':
         stmt = stmt.filter(Achievement.category == category)
-    if level and level != 'all':
+    if levels:
+        stmt = stmt.filter(Achievement.level.in_(levels))
+    elif level and level != 'all':
         stmt = stmt.filter(Achievement.level == level)
-    if result and result != 'all':
+    if results:
+        stmt = stmt.filter(Achievement.result.in_(results))
+    elif result and result != 'all':
         stmt = stmt.filter(Achievement.result == result)
 
     if sort_by == 'newest':

@@ -31,11 +31,11 @@ export const supportApi = {
     return client.get<SupportListResponse>('/moderation/support', { params })
   },
 
-  getMyChats(params?: { page?: number; status?: string; query?: string; sort_by?: string; sort_order?: string }) {
+  getMyChats(params?: { page?: number; status?: string; statuses?: string[]; query?: string; sort_by?: string; sort_order?: string }) {
     return client.get<SupportListResponse>('/moderation/support/chats', { params })
   },
 
-  getAllTickets(params?: { page?: number; status?: string; query?: string; sort_by?: string; sort_order?: string }) {
+  getAllTickets(params?: { page?: number; status?: string; statuses?: string[]; query?: string; sort_by?: string; sort_order?: string }) {
     return client.get<SupportListResponse>('/moderation/support/all', { params })
   },
 

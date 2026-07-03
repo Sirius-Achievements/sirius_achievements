@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 
 import { supportApi } from '@/api/support'
+import { ChipMultiSelect } from '@/components/staff/ChipMultiSelect'
 import { SearchAutocompleteInput, type SearchSuggestionItem } from '@/components/staff/SearchAutocompleteInput'
 import { StaffSectionHeader } from '@/components/staff/StaffSectionHeader'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
@@ -112,7 +113,7 @@ export function ModerationSupportPage() {
   const tab = normalizeSupportTab(searchParams.get('tab'))
   const [data, setData] = useState<SupportListResponse | null>(null)
   const [query, setQuery] = useState('')
-  const [status, setStatus] = useState('')
+  const [statusSel, setStatusSel] = useState<string[]>([])
   const [sortBy, setSortBy] = useState(tab === 'chats' ? 'updated_at' : 'created_at')
   const [sortOrder, setSortOrder] = useState('desc')
   const [page, setPage] = useState(1)
@@ -122,22 +123,25 @@ export function ModerationSupportPage() {
 
   useEffect(() => {
     setQuery('')
-    setStatus('')
+    setStatusSel([])
     setPage(1)
     setSortOrder('desc')
     setSortBy(tab === 'chats' ? 'updated_at' : 'created_at')
     setSuggestions([])
   }, [tab])
 
+  const toggleStatus = (value: string) =>
+    setStatusSel((cur) => (cur.includes(value) ? cur.filter((x) => x !== value) : [...cur, value]))
+
   const params = useMemo(
     () => ({
       page,
-      status: status || undefined,
+      statuses: statusSel.length ? statusSel : undefined,
       query: query || undefined,
       sort_by: sortBy,
       sort_order: sortOrder,
     }),
-    [page, query, sortBy, sortOrder, status],
+    [page, query, sortBy, sortOrder, statusSel],
   )
 
   const load = async () => {
@@ -167,7 +171,7 @@ export function ModerationSupportPage() {
 
   useEffect(() => {
     void load()
-  }, [page, params, query, sortBy, sortOrder, status, tab])
+  }, [page, params, query, sortBy, sortOrder, statusSel, tab])
 
   useEffect(() => {
     const totalPages = data?.total_pages ?? 1
@@ -178,7 +182,7 @@ export function ModerationSupportPage() {
 
   useEffect(() => {
     setPage(1)
-  }, [query, status, sortBy, sortOrder])
+  }, [query, statusSel, sortBy, sortOrder])
 
   useEffect(() => {
     const trimmed = query.trim()
@@ -241,7 +245,7 @@ export function ModerationSupportPage() {
 
   const resetFilters = () => {
     setQuery('')
-    setStatus('')
+    setStatusSel([])
     setSortOrder('desc')
     setSortBy(tab === 'chats' ? 'updated_at' : 'created_at')
     setSuggestions([])
@@ -329,20 +333,15 @@ export function ModerationSupportPage() {
           </div>
 
           {tab !== 'new' ? (
-            <div className="w-full sm:w-[150px]">
-              <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                Статус
-              </label>
-              <select
-                value={status}
-                onChange={(event) => setStatus(event.target.value)}
-                className="h-[38px] w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 outline-none transition-all focus:border-indigo-600 focus:bg-surface"
-              >
-                <option value="">Все</option>
-                <option value="open">Открытые</option>
-                <option value="in_progress">В работе</option>
-                <option value="closed">Закрытые</option>
-              </select>
+            <div className="w-full">
+              <ChipMultiSelect
+                label="Состояние"
+                options={['open', 'in_progress', 'closed']}
+                selected={statusSel}
+                onToggle={toggleStatus}
+                labelFor={(s) => ({ open: 'Открытые', in_progress: 'В работе', closed: 'Закрытые' })[s] ?? s}
+                onReset={() => setStatusSel([])}
+              />
             </div>
           ) : null}
 

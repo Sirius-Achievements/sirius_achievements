@@ -9,6 +9,31 @@ from app.repositories.admin.crud_repository import CrudRepository
 from app.utils.search import escape_like
 
 
+def _apply_status_filter(stmt, filters: dict):
+    """Filter tickets by one or many statuses (OR within). 'closed' also matches
+    archived tickets; when 'closed' is not selected, archived tickets are hidden."""
+    selected = list(filters.get('statuses') or [])
+    single = filters.get('status')
+    if single and single not in selected:
+        selected.append(single)
+
+    if not selected:
+        return stmt.filter(SupportTicket.archived_at.is_(None))
+
+    include_closed = 'closed' in selected
+    others = [s for s in selected if s != 'closed']
+    conditions = []
+    if others:
+        conditions.append(SupportTicket.status.in_(others))
+    if include_closed:
+        conditions.append(or_(SupportTicket.status == SupportTicketStatus.CLOSED, SupportTicket.archived_at.is_not(None)))
+    else:
+        stmt = stmt.filter(SupportTicket.archived_at.is_(None))
+    if conditions:
+        stmt = stmt.filter(or_(*conditions))
+    return stmt
+
+
 class SupportTicketRepository(CrudRepository):
     ITEMS_PER_PAGE = 20
 
@@ -168,13 +193,7 @@ class SupportTicketRepository(CrudRepository):
         joined_users = False
 
         if filters:
-            status = filters.get('status')
-            if status == 'closed':
-                stmt = stmt.filter(or_(SupportTicket.status == SupportTicketStatus.CLOSED, SupportTicket.archived_at.is_not(None)))
-            else:
-                stmt = stmt.filter(SupportTicket.archived_at.is_(None))
-                if status:
-                    stmt = stmt.filter(SupportTicket.status == status)
+            stmt = _apply_status_filter(stmt, filters)
             if filters.get('query'):
                 like_term = f"%{escape_like(filters['query'])}%"
                 stmt = stmt.join(Users, SupportTicket.user_id == Users.id)
@@ -233,13 +252,7 @@ class SupportTicketRepository(CrudRepository):
         stmt = select(func.count()).select_from(SupportTicket)
         joined_users = False
         if filters:
-            status = filters.get('status')
-            if status == 'closed':
-                stmt = stmt.filter(or_(SupportTicket.status == SupportTicketStatus.CLOSED, SupportTicket.archived_at.is_not(None)))
-            else:
-                stmt = stmt.filter(SupportTicket.archived_at.is_(None))
-                if status:
-                    stmt = stmt.filter(SupportTicket.status == status)
+            stmt = _apply_status_filter(stmt, filters)
             if filters.get('query'):
                 like_term = f"%{escape_like(filters['query'])}%"
                 stmt = stmt.join(Users, SupportTicket.user_id == Users.id)

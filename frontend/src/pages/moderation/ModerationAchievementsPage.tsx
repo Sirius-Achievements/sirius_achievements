@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react'
 import { Link } from 'react-router-dom'
 
 import { documentsApi } from '@/api/documents'
 import { moderationApi } from '@/api/moderation'
+import { ChipMultiSelect } from '@/components/staff/ChipMultiSelect'
 import { SearchAutocompleteInput, type SearchSuggestionItem } from '@/components/staff/SearchAutocompleteInput'
 import { StaffSectionHeader } from '@/components/staff/StaffSectionHeader'
 import { DocumentPreviewImage } from '@/components/ui/DocumentPreviewImage'
@@ -22,9 +23,9 @@ export function ModerationAchievementsPage() {
   const { pushToast } = useToast()
   const [items, setItems] = useState<Achievement[]>([])
   const [query, setQuery] = useState('')
-  const [category, setCategory] = useState('')
-  const [level, setLevel] = useState('')
-  const [result, setResult] = useState('')
+  const [categorySel, setCategorySel] = useState<string[]>([])
+  const [levelSel, setLevelSel] = useState<string[]>([])
+  const [resultSel, setResultSel] = useState<string[]>([])
   const [sortBy, setSortBy] = useState('oldest')
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
@@ -38,13 +39,16 @@ export function ModerationAchievementsPage() {
     () => ({
       page,
       query: query || undefined,
-      category: category || undefined,
-      level: level || undefined,
-      result: result || undefined,
+      categories: categorySel.length ? categorySel : undefined,
+      levels: levelSel.length ? levelSel : undefined,
+      results: resultSel.length ? resultSel : undefined,
       sort_by: sortBy,
     }),
-    [category, level, page, query, result, sortBy],
+    [categorySel, levelSel, page, query, resultSel, sortBy],
   )
+
+  const toggleIn = (setter: Dispatch<SetStateAction<string[]>>) => (value: string) =>
+    setter((cur) => (cur.includes(value) ? cur.filter((x) => x !== value) : [...cur, value]))
 
   const load = async (initial = false) => {
     if (initial) {
@@ -73,7 +77,7 @@ export function ModerationAchievementsPage() {
 
   useEffect(() => {
     setPage(1)
-  }, [query, category, level, result, sortBy])
+  }, [query, categorySel, levelSel, resultSel, sortBy])
 
   useEffect(() => {
     const trimmed = query.trim()
@@ -87,9 +91,9 @@ export function ModerationAchievementsPage() {
         const { data } = await moderationApi.getAchievements({
           page: 1,
           query: trimmed,
-          category: category || undefined,
-          level: level || undefined,
-          result: result || undefined,
+          categories: categorySel.length ? categorySel : undefined,
+          levels: levelSel.length ? levelSel : undefined,
+          results: resultSel.length ? resultSel : undefined,
           sort_by: sortBy,
         })
         setSuggestions(
@@ -106,7 +110,7 @@ export function ModerationAchievementsPage() {
     return () => {
       window.clearTimeout(timeoutId)
     }
-  }, [category, level, query, result, sortBy])
+  }, [categorySel, levelSel, query, resultSel, sortBy])
 
   const handleTake = async (item: Achievement) => {
     try {
@@ -163,9 +167,9 @@ export function ModerationAchievementsPage() {
 
   const resetFilters = () => {
     setQuery('')
-    setCategory('')
-    setLevel('')
-    setResult('')
+    setCategorySel([])
+    setLevelSel([])
+    setResultSel([])
     setSortBy('oldest')
     setSuggestions([])
     setPage(1)
@@ -199,58 +203,16 @@ export function ModerationAchievementsPage() {
             className="min-w-[240px] flex-1"
           />
 
-          <div className="w-full sm:w-[140px]">
-            <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-500">
-              Категория
-            </label>
-            <select
-              value={category}
-              onChange={(event) => setCategory(event.target.value)}
-              className="h-[38px] w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 outline-none transition-all focus:border-indigo-600 focus:bg-surface"
-            >
-              <option value="">Все</option>
-              {Object.values(AchievementCategory).map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
+          <div className="w-full">
+            <ChipMultiSelect label="Категория" options={Object.values(AchievementCategory)} selected={categorySel} onToggle={toggleIn(setCategorySel)} onReset={() => setCategorySel([])} />
           </div>
 
-          <div className="w-full sm:w-[140px]">
-            <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-500">
-              Уровень
-            </label>
-            <select
-              value={level}
-              onChange={(event) => setLevel(event.target.value)}
-              className="h-[38px] w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 outline-none transition-all focus:border-indigo-600 focus:bg-surface"
-            >
-              <option value="">Все</option>
-              {Object.values(AchievementLevel).map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
+          <div className="w-full">
+            <ChipMultiSelect label="Уровень" options={Object.values(AchievementLevel)} selected={levelSel} onToggle={toggleIn(setLevelSel)} onReset={() => setLevelSel([])} />
           </div>
 
-          <div className="w-full sm:w-[140px]">
-            <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-500">
-              Результат
-            </label>
-            <select
-              value={result}
-              onChange={(event) => setResult(event.target.value)}
-              className="h-[38px] w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 outline-none transition-all focus:border-indigo-600 focus:bg-surface"
-            >
-              <option value="">Все</option>
-              {Object.values(AchievementResult).map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
+          <div className="w-full">
+            <ChipMultiSelect label="Результат" options={Object.values(AchievementResult)} selected={resultSel} onToggle={toggleIn(setResultSel)} onReset={() => setResultSel([])} />
           </div>
 
           <div className="w-full sm:w-[170px]">

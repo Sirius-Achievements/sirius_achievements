@@ -115,6 +115,7 @@ async def moderation_support_queue(
 async def moderation_support_chats(
     page: int = Query(default=1, ge=1, le=1000),
     status: str = '',
+    statuses: list[str] | None = Query(default=None),
     query: str = '',
     sort_by: str = 'updated_at',
     sort_order: str = 'desc',
@@ -123,7 +124,9 @@ async def moderation_support_chats(
 ):
     ticket_repo = SupportTicketRepository(db)
     filters = {'page': page}
-    if status:
+    if statuses:
+        filters['statuses'] = statuses
+    elif status:
         filters['status'] = status
     if query:
         filters['query'] = query
@@ -180,6 +183,7 @@ async def search_support_tickets(
 async def moderation_support_all(
     page: int = Query(default=1, ge=1, le=1000),
     status: str = '',
+    statuses: list[str] | None = Query(default=None),
     query: str = '',
     sort_by: str = 'created_at',
     sort_order: str = 'desc',
@@ -188,7 +192,9 @@ async def moderation_support_all(
 ):
     ticket_repo = SupportTicketRepository(db)
     filters = {'page': page}
-    if status:
+    if statuses:
+        filters['statuses'] = statuses
+    elif status:
         filters['status'] = status
     if query:
         filters['query'] = query
