@@ -12,6 +12,8 @@ export interface ReportParams {
   category?: string
   categories?: string[]
   status?: string
+  statuses?: string[]
+  category_logic?: string
 }
 
 export interface ScopeStudent {
@@ -36,6 +38,10 @@ function paramsToPayload(params: ReportParams | URLSearchParams) {
     }
     if (key === 'categories') {
       payload.categories = [...(payload.categories ?? []), value]
+      return
+    }
+    if (key === 'statuses') {
+      payload.statuses = [...(payload.statuses ?? []), value]
       return
     }
     ;(payload as Record<string, string | string[]>)[key] = value

@@ -33,16 +33,22 @@ class ReportExportPayload(BaseModel):
     category: str | None = None
     categories: list[str] | None = None
     status: str | None = None
+    statuses: list[str] | None = None
+    category_logic: str | None = None
+
+
+def _merge_multi(single: str | None, multi: list[str] | None) -> list[str]:
+    """Merge single + multi inputs into a clean allowlist (empty = all)."""
+    values: list[str] = []
+    if multi:
+        values.extend(multi)
+    if single and single != 'all':
+        values.append(single)
+    return [item for item in dict.fromkeys(values) if item and item != 'all']
 
 
 def _selected_categories(category: str | None, categories: list[str] | None) -> list[str]:
-    """Merge single + multi category inputs into a clean allowlist (empty = all)."""
-    values: list[str] = []
-    if categories:
-        values.extend(categories)
-    if category and category != 'all':
-        values.append(category)
-    return [item for item in dict.fromkeys(values) if item and item != 'all']
+    return _merge_multi(category, categories)
 
 
 def _parse_date(value: str | None, *, end: bool = False):
@@ -171,6 +177,8 @@ async def export_report_post(
         category=payload.category,
         categories=payload.categories,
         status_filter=payload.status,
+        statuses=payload.statuses,
+        category_logic=payload.category_logic,
         current_user=current_user,
         db=db,
     )
@@ -190,11 +198,15 @@ async def export_report(
     category: str | None = Query(default=None),
     categories: list[str] | None = Query(default=None),
     status_filter: str | None = Query(default=None, alias='status'),
+    statuses: list[str] | None = Query(default=None),
+    category_logic: str | None = Query(default=None),
     current_user=Depends(_require_staff),
     db: AsyncSession = Depends(get_db),
 ):
     selected_student_ids = _selected_student_ids(student_id, student_ids)
     selected_categories = _selected_categories(category, categories)
+    selected_statuses = _merge_multi(status_filter, statuses)
+    use_and = (category_logic or 'or').lower() == 'and'
     if report_type in {'moderation', 'documents'}:
         stmt = (
             select(Achievement, Users)
@@ -203,8 +215,8 @@ async def export_report(
         )
         if report_type == 'moderation':
             stmt = stmt.filter(Achievement.status == AchievementStatus.PENDING)
-        if status_filter and status_filter != 'all':
-            stmt = stmt.filter(Achievement.status == status_filter)
+        if selected_statuses:
+            stmt = stmt.filter(Achievement.status.in_(selected_statuses))
         if selected_categories:
             stmt = stmt.filter(Achievement.category.in_(selected_categories))
         if selected_student_ids:
@@ -233,11 +245,18 @@ async def export_report(
     if report_type in {'leaderboard', 'students'}:
         achievement_points = func.coalesce(func.sum(Achievement.points), 0)
         total_points = (achievement_points + aggregated_gpa_bonus_expr(Users.session_gpa)).label('total_points')
-        # Ranking counts only approved achievements; if categories are selected the
-        # points/docs reflect just those directions ("кто набрал больше в Спорт+Наука").
+        # Ranking counts only approved achievements. Selected categories scope the
+        # points/docs to those directions; period scopes them to the time window.
         join_condition = (Users.id == Achievement.user_id) & (Achievement.status == AchievementStatus.APPROVED)
         if selected_categories:
             join_condition = join_condition & Achievement.category.in_(selected_categories)
+        period_start, period_end = _period_dates(period)
+        start = _parse_date(date_from) or period_start
+        end = _parse_date(date_to, end=True) or period_end
+        if start:
+            join_condition = join_condition & (Achievement.created_at >= start)
+        if end:
+            join_condition = join_condition & (Achievement.created_at < end)
         stmt = (
             select(Users, total_points, func.count(Achievement.id).label('docs_count'))
             .outerjoin(Achievement, join_condition)
@@ -245,6 +264,14 @@ async def export_report(
             .group_by(Users.id)
             .order_by(desc('total_points'), desc('docs_count'))
         )
+        # When directions are selected, drop students with no matching documents.
+        # OR (default): keep anyone with >=1 of the selected directions.
+        # AND: keep only students who have documents in EVERY selected direction.
+        # The join is scoped to the selected categories, so distinct-category count
+        # equals how many of them the student actually has.
+        if selected_categories:
+            min_distinct = len(selected_categories) if use_and else 1
+            stmt = stmt.having(func.count(func.distinct(Achievement.category)) >= min_distinct)
         if selected_student_ids:
             stmt = stmt.filter(Users.id.in_(selected_student_ids))
         stmt = _scope_users(stmt, current_user, education_level, course, group)
@@ -311,6 +338,8 @@ async def export_report(
         stmt = select(SupportTicket, Users).join(Users, SupportTicket.user_id == Users.id).order_by(SupportTicket.created_at.desc())
         stmt = _apply_date(stmt, SupportTicket.created_at, date_from, date_to, period)
         stmt = _scope_users(stmt, current_user, education_level, course, group)
+        if selected_statuses:
+            stmt = stmt.filter(SupportTicket.status.in_(selected_statuses))
         if selected_student_ids:
             stmt = stmt.filter(SupportTicket.user_id.in_(selected_student_ids))
         rows = (await db.execute(stmt)).all()

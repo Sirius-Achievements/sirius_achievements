@@ -8,38 +8,22 @@ import { coursesForEducationLevel, groupsForEducationLevel } from '@/utils/label
 
 const EDUCATION_LEVELS = ['Специалитет']
 
-// Top-level "what are we exporting".
+// Top-level "what are we exporting" — maps directly to a backend report type.
 type ReportObject = 'documents' | 'support' | 'leaderboard' | 'students'
 const OBJECTS: Array<{ value: ReportObject; label: string; hint: string }> = [
-  { value: 'documents', label: 'Документы', hint: 'Реестр достижений и сводки по ним' },
+  { value: 'documents', label: 'Документы', hint: 'Реестр достижений за период' },
   { value: 'support', label: 'Обращения', hint: 'Обращения поддержки за период' },
   { value: 'leaderboard', label: 'Рейтинг', hint: 'Рейтинг студентов по баллам' },
   { value: 'students', label: 'Люди', hint: 'Выгрузка по студентам' },
 ]
 
-// The "разрез" (grouping) inside an object → the backend report_type it maps to.
-type Slice = { value: string; label: string; backend: string }
-const SLICES: Record<ReportObject, Slice[]> = {
-  documents: [
-    { value: 'list', label: 'Список', backend: 'documents' },
-    { value: 'groups', label: 'По группам', backend: 'groups' },
-    { value: 'streams', label: 'По потокам', backend: 'streams' },
-    { value: 'categories', label: 'По направлениям', backend: 'categories' },
-  ],
-  support: [{ value: 'list', label: 'Список', backend: 'support' }],
-  leaderboard: [{ value: 'list', label: 'Рейтинг', backend: 'leaderboard' }],
-  students: [{ value: 'list', label: 'Список', backend: 'students' }],
-}
-
 const ACHIEVEMENT_STATUSES: Array<[string, string]> = [
-  ['all', 'Все статусы'],
   ['pending', 'На проверке'],
   ['approved', 'Одобрено'],
   ['rejected', 'Отклонено'],
   ['revision', 'На доработке'],
 ]
 const SUPPORT_STATUSES: Array<[string, string]> = [
-  ['all', 'Все обращения'],
   ['open', 'Открытые'],
   ['in_progress', 'В работе'],
   ['closed', 'Закрытые'],
@@ -58,20 +42,39 @@ const inputClass =
   'w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-700 focus:bg-surface focus:border-indigo-600 outline-none transition-all disabled:opacity-50'
 const labelClass = 'block text-[10px] font-bold text-slate-500 uppercase mb-1 tracking-wider'
 
-function controlsFor(object: ReportObject, slice: string) {
-  const isDocList = object === 'documents' && slice === 'list'
-  return {
-    period: object === 'documents' || object === 'support',
-    status: object === 'support' ? 'support' : isDocList ? 'achievement' : null,
-    // Category (multi) applies to documents (all slices) and to ranking/people
-    // where it means "points earned in the selected directions".
-    category: object === 'documents' || object === 'leaderboard' || object === 'students',
-  } as const
+// Per-object controls.
+function controlsFor(object: ReportObject) {
+  switch (object) {
+    case 'documents':
+      return { period: true, statusMulti: 'achievement' as const, category: 'multi' as const }
+    case 'support':
+      return { period: true, statusMulti: 'support' as const, category: null }
+    case 'leaderboard':
+      return { period: true, statusMulti: null, category: 'andor' as const }
+    case 'students':
+      return { period: true, statusMulti: null, category: null }
+  }
+}
+
+function ChipToggle({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-[11px] font-medium transition-colors ${active ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-indigo-300'}`}
+    >
+      {active ? (
+        <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" />
+        </svg>
+      ) : null}
+      {label}
+    </button>
+  )
 }
 
 export function ReportExportPanel() {
   const [reportObject, setReportObject] = useState<ReportObject>('documents')
-  const [slice, setSlice] = useState('list')
 
   const [periodMode, setPeriodMode] = useState<'quick' | 'custom'>('quick')
   const [period, setPeriod] = useState('all')
@@ -82,8 +85,9 @@ export function ReportExportPanel() {
   const [course, setCourse] = useState('0')
   const [group, setGroup] = useState('all')
 
-  const [status, setStatus] = useState('all')
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>([])
   const [selectedCategories, setSelectedCategories] = useState<string[]>([])
+  const [categoryLogic, setCategoryLogic] = useState<'or' | 'and'>('or')
 
   const [studentMode, setStudentMode] = useState<'scope' | 'specific'>('scope')
   const [scopeList, setScopeList] = useState<ScopeStudent[]>([])
@@ -97,9 +101,8 @@ export function ReportExportPanel() {
   const [isExporting, setIsExporting] = useState(false)
   const [error, setError] = useState('')
 
-  const slices = SLICES[reportObject]
-  const backendType = slices.find((s) => s.value === slice)?.backend ?? slices[0].backend
-  const config = controlsFor(reportObject, slice)
+  const config = controlsFor(reportObject)
+  const statusOptions = config.statusMulti === 'support' ? SUPPORT_STATUSES : ACHIEVEMENT_STATUSES
 
   const courseOptions = educationLevel !== 'all' ? coursesForEducationLevel(educationLevel) : []
   const groupOptions =
@@ -109,17 +112,14 @@ export function ReportExportPanel() {
         : groupsForEducationLevel(educationLevel)
       : []
 
-  // Reset slice + type-specific filters when the object changes.
+  // Reset type-specific filters when switching object.
   useEffect(() => {
-    setSlice(SLICES[reportObject][0].value)
-    setStatus('all')
+    setSelectedStatuses([])
+    setSelectedCategories([])
+    setCategoryLogic('or')
   }, [reportObject])
 
-  useEffect(() => {
-    setStatus('all')
-  }, [slice])
-
-  // Load the scope student list when in "Охват" mode and a level is chosen.
+  // Load scope student list in "Охват" mode.
   useEffect(() => {
     if (studentMode !== 'scope' || educationLevel === 'all') {
       setScopeList([])
@@ -150,7 +150,7 @@ export function ReportExportPanel() {
     }
   }, [studentMode, educationLevel, course, group])
 
-  // Autocomplete for the "Точечно" mode.
+  // Autocomplete for "Точечно".
   useEffect(() => {
     const trimmed = specificQuery.trim()
     if (trimmed.length < 2) {
@@ -173,22 +173,18 @@ export function ReportExportPanel() {
   }, [specificQuery, specificStudents])
 
   const includedCount = scopeList.length - excludedIds.size
-  const statusOptions = config.status === 'support' ? SUPPORT_STATUSES : ACHIEVEMENT_STATUSES
 
-  const toggleExcluded = (id: number) => {
-    setExcludedIds((current) => {
-      const next = new Set(current)
+  const toggleExcluded = (id: number) =>
+    setExcludedIds((cur) => {
+      const next = new Set(cur)
       if (next.has(id)) next.delete(id)
       else next.add(id)
       return next
     })
-  }
-
-  const toggleCategory = (value: string) => {
-    setSelectedCategories((current) =>
-      current.includes(value) ? current.filter((c) => c !== value) : [...current, value],
-    )
-  }
+  const toggleStatus = (v: string) =>
+    setSelectedStatuses((cur) => (cur.includes(v) ? cur.filter((x) => x !== v) : [...cur, v]))
+  const toggleCategory = (v: string) =>
+    setSelectedCategories((cur) => (cur.includes(v) ? cur.filter((x) => x !== v) : [...cur, v]))
 
   const params = useMemo(() => {
     const p = new URLSearchParams()
@@ -202,8 +198,12 @@ export function ReportExportPanel() {
       }
     }
 
-    if (config.status && status !== 'all') p.set('status', status)
-    if (config.category) selectedCategories.forEach((c) => p.append('categories', c))
+    if (config.statusMulti) selectedStatuses.forEach((s) => p.append('statuses', s))
+
+    if (config.category) {
+      selectedCategories.forEach((c) => p.append('categories', c))
+      if (config.category === 'andor' && selectedCategories.length > 1) p.set('category_logic', categoryLogic)
+    }
 
     if (studentMode === 'specific') {
       specificStudents.forEach((s) => p.append('student_ids', String(s.id)))
@@ -216,7 +216,7 @@ export function ReportExportPanel() {
       }
     }
     return p
-  }, [config, periodMode, period, dateFrom, dateTo, status, selectedCategories, studentMode, specificStudents, educationLevel, course, group, excludedIds, scopeList])
+  }, [config, periodMode, period, dateFrom, dateTo, selectedStatuses, selectedCategories, categoryLogic, studentMode, specificStudents, educationLevel, course, group, excludedIds, scopeList])
 
   const handleDownload = async () => {
     setError('')
@@ -230,12 +230,12 @@ export function ReportExportPanel() {
     }
     setIsExporting(true)
     try {
-      const response = await reportsApi.exportCsv(backendType, params)
+      const response = await reportsApi.exportCsv(reportObject, params)
       const blob = new Blob([response.data as BlobPart], { type: 'text/csv;charset=utf-8;' })
       const url = window.URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
-      link.download = `${backendType}_report.csv`
+      link.download = `${reportObject}_report.csv`
       document.body.appendChild(link)
       link.click()
       link.remove()
@@ -272,40 +272,22 @@ export function ReportExportPanel() {
         </div>
       </div>
 
-      {/* Slice (разрез) — only when the object has more than one */}
-      {slices.length > 1 ? (
+      {/* Status (multi-select chips) */}
+      {config.statusMulti ? (
         <div className="mb-4">
-          <label className={labelClass}>Разрез</label>
-          <div className="inline-flex flex-wrap gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1">
-            {slices.map((s) => (
-              <button
-                key={s.value}
-                type="button"
-                onClick={() => setSlice(s.value)}
-                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${slice === s.value ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
-              >
-                {s.label}
-              </button>
+          <label className={labelClass}>
+            {config.statusMulti === 'support' ? 'Состояние обращений' : 'Статус документов'}{' '}
+            {selectedStatuses.length > 0 ? `(${selectedStatuses.length})` : '— все'}
+          </label>
+          <div className="flex flex-wrap gap-1.5">
+            {statusOptions.map(([value, label]) => (
+              <ChipToggle key={value} active={selectedStatuses.includes(value)} label={label} onClick={() => toggleStatus(value)} />
             ))}
           </div>
         </div>
       ) : null}
 
-      {/* Status (single) */}
-      {config.status ? (
-        <div className="mb-4 max-w-xs">
-          <label className={labelClass}>{config.status === 'support' ? 'Состояние обращений' : 'Статус документов'}</label>
-          <select value={status} onChange={(e) => setStatus(e.target.value)} className={inputClass}>
-            {statusOptions.map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </div>
-      ) : null}
-
-      {/* Category (multi, combinable) */}
+      {/* Category (multi, combinable + optional AND/OR) */}
       {config.category ? (
         <div className="mb-4">
           <div className="flex items-center justify-between mb-1">
@@ -317,27 +299,33 @@ export function ReportExportPanel() {
             ) : null}
           </div>
           <div className="flex flex-wrap gap-1.5">
-            {CATEGORY_OPTIONS.map((c) => {
-              const active = selectedCategories.includes(c)
-              return (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => toggleCategory(c)}
-                  className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-[11px] font-medium transition-colors ${active ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-indigo-300'}`}
-                >
-                  {active ? (
-                    <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" />
-                    </svg>
-                  ) : null}
-                  {c}
-                </button>
-              )
-            })}
+            {CATEGORY_OPTIONS.map((c) => (
+              <ChipToggle key={c} active={selectedCategories.includes(c)} label={c} onClick={() => toggleCategory(c)} />
+            ))}
           </div>
-          {(reportObject === 'leaderboard' || reportObject === 'students') && selectedCategories.length > 0 ? (
-            <p className="mt-1.5 text-[11px] text-slate-400">Баллы и рейтинг считаются только по выбранным направлениям.</p>
+          {config.category === 'andor' && selectedCategories.length > 1 ? (
+            <div className="mt-2 flex items-center gap-2">
+              <span className="text-[11px] font-semibold text-slate-500">Логика:</span>
+              <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-[11px] font-semibold">
+                <button
+                  type="button"
+                  onClick={() => setCategoryLogic('or')}
+                  className={`px-3 py-1 rounded-md transition-colors ${categoryLogic === 'or' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  Любое из
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCategoryLogic('and')}
+                  className={`px-3 py-1 rounded-md transition-colors ${categoryLogic === 'and' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  Все сразу
+                </button>
+              </div>
+              <span className="text-[11px] text-slate-400">
+                {categoryLogic === 'and' ? 'у студента есть документы во ВСЕХ выбранных' : 'хотя бы в одном из выбранных'}
+              </span>
+            </div>
           ) : null}
         </div>
       ) : null}
