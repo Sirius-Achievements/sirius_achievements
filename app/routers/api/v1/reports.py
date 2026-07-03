@@ -112,6 +112,34 @@ async def _require_staff(current_user=Depends(auth)):
     return current_user
 
 
+@router.get('/meta/students')
+async def scope_students(
+    education_level: str | None = Query(default=None),
+    course: str | None = Query(default=None),
+    group: str | None = Query(default=None),
+    current_user=Depends(_require_staff),
+    db: AsyncSession = Depends(get_db),
+):
+    """Active students matching the export scope — powers the "Охват" checkbox picker."""
+    stmt = select(Users).filter(Users.role == UserRole.STUDENT, Users.status == UserStatus.ACTIVE)
+    stmt = _scope_users(stmt, current_user, education_level, course, group)
+    stmt = stmt.order_by(Users.course, Users.study_group, Users.last_name, Users.first_name)
+    students = (await db.execute(stmt)).scalars().all()
+    return {
+        'students': [
+            {
+                'id': s.id,
+                'first_name': s.first_name,
+                'last_name': s.last_name,
+                'course': s.course,
+                'study_group': s.study_group,
+                'education_level': s.education_level.value if s.education_level else None,
+            }
+            for s in students
+        ],
+    }
+
+
 @router.post('/{report_type}/export')
 async def export_report_post(
     report_type: str,

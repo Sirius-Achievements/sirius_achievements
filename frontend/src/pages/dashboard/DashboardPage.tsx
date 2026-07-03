@@ -3,29 +3,14 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 
 import { dashboardApi, type DashboardStats } from '@/api/dashboard'
-import { reportsApi } from '@/api/reports'
-import { usersApi } from '@/api/users'
 import { PointsGuide } from '@/components/points/PointsGuide'
-import { SearchAutocompleteInput, type SearchSuggestionItem } from '@/components/staff/SearchAutocompleteInput'
+import { ReportExportPanel } from '@/components/staff/ReportExportPanel'
 import { useAuth } from '@/hooks/useAuth'
 import { formatDateTime } from '@/utils/formatDate'
 import { getErrorMessage } from '@/utils/http'
 import { coursesForEducationLevel, groupsForEducationLevel } from '@/utils/labels'
 
 const PERIODS = ['day', 'week', 'month', 'all'] as const
-const EDUCATION_LEVELS = ['Специалитет']
-const REPORT_DESCRIPTIONS: Record<string, string> = {
-  moderation: 'Документы, ожидающие проверки модератором',
-  documents: 'Полный реестр документов с фильтрами по статусам',
-  categories: 'Сводка по категориям и уровням достижений',
-  leaderboard: 'Рейтинг студентов с баллами и количеством документов',
-  students: 'Выгрузка по студентам, курсам и группам',
-  groups: 'Агрегированная статистика по группам',
-  streams: 'Агрегированная статистика по потокам',
-  aggregate: 'Сводная статистика по группам и направлениям',
-  support: 'Обращения поддержки за выбранный период',
-}
-
 function normalizePeriod(value: string | null) {
   return PERIODS.includes((value ?? '') as (typeof PERIODS)[number]) ? (value as (typeof PERIODS)[number]) : 'day'
 }
@@ -57,17 +42,6 @@ export function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [reportType, setReportType] = useState('moderation')
-  const [reportPeriod, setReportPeriod] = useState('all')
-  const [reportEducationLevel, setReportEducationLevel] = useState('all')
-  const [reportCourse, setReportCourse] = useState('0')
-  const [reportGroup, setReportGroup] = useState('all')
-  const [reportDateFrom, setReportDateFrom] = useState('')
-  const [reportDateTo, setReportDateTo] = useState('')
-  const [reportStudentQuery, setReportStudentQuery] = useState('')
-  const [reportStudents, setReportStudents] = useState<Array<{ id: number; label: string }>>([])
-  const [reportStudentSuggestions, setReportStudentSuggestions] = useState<SearchSuggestionItem[]>([])
-  const [isExportingReport, setIsExportingReport] = useState(false)
   const chartCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const chartRef = useRef<Chart | null>(null)
 
@@ -99,27 +73,7 @@ export function DashboardPage() {
       }
     }
     void load()
-  }, [dateFrom, dateTo, isDeletedAccount, period])
-
-  useEffect(() => {
-    const trimmed = reportStudentQuery.trim()
-    if (!trimmed) {
-      setReportStudentSuggestions([])
-      return
-    }
-    const selectedIds = new Set(reportStudents.map((s) => s.id))
-    const timeoutId = window.setTimeout(async () => {
-      try {
-        const response = await usersApi.search(trimmed)
-        setReportStudentSuggestions(
-          (response.data ?? []).filter((item) => item.id == null || !selectedIds.has(item.id)),
-        )
-      } catch {
-        setReportStudentSuggestions([])
-      }
-    }, 200)
-    return () => window.clearTimeout(timeoutId)
-  }, [reportStudentQuery, reportStudents])
+  }, [dateTo, dateFrom, isDeletedAccount, period])
 
   useEffect(() => {
     const canvas = chartCanvasRef.current
@@ -277,39 +231,6 @@ export function DashboardPage() {
     setSearchParams(next)
   }
 
-  const reportParams = new URLSearchParams()
-  if (reportPeriod !== 'all') reportParams.set('period', reportPeriod)
-  if (reportEducationLevel !== 'all') reportParams.set('education_level', reportEducationLevel)
-  if (reportCourse !== '0') reportParams.set('course', reportCourse)
-  if (reportGroup !== 'all') reportParams.set('group', reportGroup)
-  if (reportDateFrom) reportParams.set('date_from', reportDateFrom)
-  if (reportDateTo) reportParams.set('date_to', reportDateTo)
-  reportStudents.forEach((s) => reportParams.append('student_ids', String(s.id)))
-  const reportCourseOptions = reportEducationLevel !== 'all' ? coursesForEducationLevel(reportEducationLevel) : []
-  const reportGroupOptions = reportEducationLevel !== 'all'
-    ? reportCourse !== '0'
-      ? groupsForEducationLevel(reportEducationLevel, reportCourse)
-      : groupsForEducationLevel(reportEducationLevel)
-    : []
-  const handleReportDownload = async () => {
-    setIsExportingReport(true)
-    setError(null)
-    try {
-      const response = await reportsApi.exportCsv(reportType, reportParams)
-      const href = URL.createObjectURL(new Blob([response.data], { type: 'text/csv;charset=utf-8;' }))
-      const link = document.createElement('a')
-      link.href = href
-      link.download = `${reportType}_report.csv`
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-      URL.revokeObjectURL(href)
-    } catch (downloadError) {
-      setError(getErrorMessage(downloadError, 'Не удалось выгрузить CSV.'))
-    } finally {
-      setIsExportingReport(false)
-    }
-  }
   const staffCards = [
     { label: 'Новых студентов', value: `+${stats?.new_users_count ?? 0}` },
     { label: 'Всего загружено док.', value: `${stats?.total_achievements ?? 0}` },
@@ -446,60 +367,7 @@ export function DashboardPage() {
             </div>
           ) : null}
 
-          <div className="bg-surface p-5 rounded-xl border border-slate-200 shadow-sm">
-            <div className="flex items-center justify-between mb-4"><h3 className="text-sm font-semibold text-slate-800">Экспорт отчётов (CSV)</h3></div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-              <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 tracking-wider">Тип отчёта</label><select value={reportType} onChange={(event) => setReportType(event.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-700 focus:bg-surface focus:border-indigo-600 outline-none transition-all"><option value="moderation">Очередь модерации</option><option value="documents">Документы</option><option value="categories">По направлениям</option><option value="leaderboard">Рейтинг</option><option value="students">По студентам</option><option value="groups">По группам</option><option value="streams">По потокам</option><option value="aggregate">Агрегированная</option><option value="support">Обращения</option></select></div>
-              <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 tracking-wider">Период</label><select value={reportPeriod} onChange={(event) => setReportPeriod(event.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-700 focus:bg-surface focus:border-indigo-600 outline-none transition-all"><option value="all">Всё время</option><option value="day">Последние 24 часа</option><option value="week">Последние 7 дней</option><option value="month">Последние 30 дней</option></select></div>
-              <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 tracking-wider">Уровень обучения</label><select value={reportEducationLevel} onChange={(event) => setReportEducationLevel(event.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-700 focus:bg-surface focus:border-indigo-600 outline-none transition-all"><option value="all">Все направления</option>{EDUCATION_LEVELS.map((item) => <option key={item} value={item}>{item}</option>)}</select></div>
-              <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 tracking-wider">Курс</label><select value={reportCourse} onChange={(event) => { setReportCourse(event.target.value); setReportGroup('all') }} disabled={reportEducationLevel === 'all'} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-700 focus:bg-surface focus:border-indigo-600 outline-none transition-all disabled:opacity-50"><option value="0">Все курсы</option>{reportCourseOptions.map((item) => <option key={item} value={item}>{item} курс</option>)}</select></div>
-              <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 tracking-wider">Группа</label><select value={reportGroup} onChange={(event) => setReportGroup(event.target.value)} disabled={reportEducationLevel === 'all'} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-700 focus:bg-surface focus:border-indigo-600 outline-none transition-all disabled:opacity-50"><option value="all">Все группы</option>{reportGroupOptions.map((item) => <option key={item} value={item}>{item}</option>)}</select></div>
-              <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 tracking-wider">Дата с</label><input type="date" value={reportDateFrom} onChange={(event) => setReportDateFrom(event.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-700 focus:bg-surface focus:border-indigo-600 outline-none transition-all" /></div>
-              <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 tracking-wider">Дата по</label><input type="date" value={reportDateTo} onChange={(event) => setReportDateTo(event.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-700 focus:bg-surface focus:border-indigo-600 outline-none transition-all" /></div>
-              <div className="md:col-span-2 lg:col-span-3">
-                <SearchAutocompleteInput
-                  label="Студенты"
-                  value={reportStudentQuery}
-                  placeholder="Имя, фамилия или email…"
-                  suggestions={reportStudentSuggestions}
-                  onChange={setReportStudentQuery}
-                  onSelectSuggestion={(item) => {
-                    if (item.id == null) return
-                    setReportStudents((current) =>
-                      current.some((s) => s.id === item.id)
-                        ? current
-                        : [...current, { id: item.id!, label: item.text }],
-                    )
-                    setReportStudentQuery('')
-                    setReportStudentSuggestions([])
-                  }}
-                />
-                {reportStudents.length > 0 ? (
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {reportStudents.map((s) => (
-                      <span
-                        key={s.id}
-                        className="inline-flex items-center gap-1.5 rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[11px] font-medium text-indigo-700"
-                      >
-                        {s.label}
-                        <button
-                          type="button"
-                          onClick={() => setReportStudents((current) => current.filter((item) => item.id !== s.id))}
-                          className="inline-flex h-4 w-4 items-center justify-center rounded-full text-indigo-500 transition-colors hover:bg-indigo-100 hover:text-indigo-700"
-                          aria-label="Убрать"
-                        >
-                          <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                          </svg>
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            </div>
-            <div className="flex items-center gap-3"><button type="button" onClick={() => void handleReportDownload()} disabled={isExportingReport} className="inline-flex items-center gap-2 bg-indigo-600 text-white hover:bg-indigo-700 px-4 py-2.5 rounded-lg text-xs font-bold transition-colors shadow-sm disabled:opacity-60"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>{isExportingReport ? 'Готовим...' : 'Скачать CSV'}</button><p className="text-[10px] text-slate-400">{REPORT_DESCRIPTIONS[reportType]}</p></div>
-          </div>
+          <ReportExportPanel />
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 bg-surface p-5 rounded-xl border border-slate-200 shadow-sm"><h3 className="text-sm font-semibold text-slate-800 mb-4">Динамика загрузки достижений</h3><div className="h-64 w-full"><canvas ref={chartCanvasRef}></canvas></div></div>

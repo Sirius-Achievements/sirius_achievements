@@ -1,6 +1,7 @@
 import client from './client'
 
 export interface ReportParams {
+  period?: string
   date_from?: string
   date_to?: string
   education_level?: string
@@ -10,6 +11,15 @@ export interface ReportParams {
   student_ids?: string[]
   category?: string
   status?: string
+}
+
+export interface ScopeStudent {
+  id: number
+  first_name: string
+  last_name: string
+  course: number | null
+  study_group: string | null
+  education_level: string | null
 }
 
 function paramsToPayload(params: ReportParams | URLSearchParams) {
@@ -31,5 +41,9 @@ function paramsToPayload(params: ReportParams | URLSearchParams) {
 export const reportsApi = {
   exportCsv(type: string, params: ReportParams | URLSearchParams) {
     return client.post(`/reports/${type}/export`, paramsToPayload(params), { responseType: 'blob' })
+  },
+
+  scopeStudents(params: { education_level?: string; course?: string; group?: string }) {
+    return client.get<{ students: ScopeStudent[] }>('/reports/meta/students', { params })
   },
 }
