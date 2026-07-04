@@ -16,6 +16,8 @@ export interface LeaderboardResponse {
   current_education_level: string
   current_course: number
   current_category: string
+  current_categories?: string[]
+  current_category_logic?: 'or' | 'and'
   current_group: string
   categories: string[]
   education_levels: string[]
@@ -31,6 +33,8 @@ export interface LeaderboardParams {
   education_level?: string
   course?: number | string
   category?: string
+  categories?: string[]
+  category_logic?: string
   group?: string
 }
 

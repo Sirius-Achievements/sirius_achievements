@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent, type MouseEvent } from 'r
 import { Link, useSearchParams } from 'react-router-dom'
 
 import { leaderboardApi, type LeaderboardResponse, type LeaderboardRow } from '@/api/leaderboard'
+import { ChipMultiSelect } from '@/components/staff/ChipMultiSelect'
 import { SearchAutocompleteInput, type SearchSuggestionItem } from '@/components/staff/SearchAutocompleteInput'
 import { PaginationFooter } from '@/components/ui/PaginationFooter'
 import { useAuth } from '@/hooks/useAuth'
@@ -68,18 +69,50 @@ export function LeaderboardPage() {
   const isStaff = user?.role === 'MODERATOR' || user?.role === 'SUPER_ADMIN'
   const educationLevel = searchParams.get('education_level') ?? undefined
   const course = searchParams.get('course') ?? undefined
-  const category = searchParams.get('category') ?? undefined
+  const categories = searchParams.getAll('categories')
+  const categoryLogic = (searchParams.get('category_logic') as 'or' | 'and') ?? 'or'
   const group = searchParams.get('group') ?? undefined
+  const categoriesKey = categories.join(',')
 
   const filters = useMemo(
     () => ({
       education_level: educationLevel,
       course,
-      category,
+      categories: categories.length ? categories : undefined,
+      category_logic: categories.length > 1 && categoryLogic === 'and' ? 'and' : undefined,
       group,
     }),
-    [category, course, educationLevel, group]
+    // categoriesKey captures the array contents for memo stability
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [categoriesKey, categoryLogic, course, educationLevel, group]
   )
+
+  const toggleCategory = (value: string) => {
+    const next = new URLSearchParams(searchParams)
+    const current = next.getAll('categories')
+    next.delete('categories')
+    const updated = current.includes(value) ? current.filter((c) => c !== value) : [...current, value]
+    updated.forEach((c) => next.append('categories', c))
+    if (updated.length < 2) next.delete('category_logic')
+    setSearchParams(next)
+    setPage(1)
+  }
+
+  const setCategoryLogic = (logic: 'or' | 'and') => {
+    const next = new URLSearchParams(searchParams)
+    if (logic === 'and') next.set('category_logic', 'and')
+    else next.delete('category_logic')
+    setSearchParams(next)
+    setPage(1)
+  }
+
+  const resetCategories = () => {
+    const next = new URLSearchParams(searchParams)
+    next.delete('categories')
+    next.delete('category_logic')
+    setSearchParams(next)
+    setPage(1)
+  }
 
   useEffect(() => {
     const load = async () => {
@@ -351,12 +384,17 @@ export function LeaderboardPage() {
             }}
             className="min-w-[240px] flex-1"
           />
-          <div className="w-full sm:w-[180px]">
-            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5 tracking-wider">Направление</label>
-            <select value={data?.current_category || 'all'} onChange={(event) => updateFilter('category', event.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-700 focus:bg-surface focus:border-indigo-600 outline-none h-[38px] transition-all cursor-pointer">
-              <option value="all">Все направления</option>
-              {data?.categories.map((item) => <option key={item} value={item}>{item}</option>)}
-            </select>
+          <div className="w-full">
+            <ChipMultiSelect
+              label="Направление"
+              options={data?.categories ?? []}
+              selected={categories}
+              onToggle={toggleCategory}
+              onReset={resetCategories}
+              logic={categoryLogic}
+              onLogicChange={setCategoryLogic}
+              andHint="в рейтинге только те, у кого есть все выбранные направления"
+            />
           </div>
 
           {isStaff ? (

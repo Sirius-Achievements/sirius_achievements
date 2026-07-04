@@ -62,25 +62,28 @@ def _apply_student_scope(stmt, user: Users, education_level: str | None, course:
     return stmt
 
 
-def _build_query_params(education_level: str | None, course: int | None, category: str | None, group: str | None):
-    params: dict[str, str | int] = {}
+def _build_query_params(education_level: str | None, course: int | None, categories: list[str] | None, group: str | None, category_logic: str = 'or'):
+    params: list[tuple[str, str | int]] = []
     if education_level and education_level != 'all':
-        params['education_level'] = education_level
+        params.append(('education_level', education_level))
     if course and course != 0:
-        params['course'] = course
-    if category and category != 'all':
-        params['category'] = category
+        params.append(('course', course))
+    for cat in categories or []:
+        params.append(('categories', cat))
+    if categories and len(categories) > 1 and category_logic == 'and':
+        params.append(('category_logic', 'and'))
     if group and group != 'all':
-        params['group'] = group
+        params.append(('group', group))
     return params
 
 
-async def _build_leaderboard_payload(user: Users, db: AsyncSession, education_level: str | None, course: int | None, category: str | None, group: str | None):
+async def _build_leaderboard_payload(user: Users, db: AsyncSession, education_level: str | None, course: int | None, categories: list[str] | None, group: str | None, category_logic: str = 'or'):
+    categories = [c for c in (categories or []) if c and c != 'all']
     achievement_filter = Achievement.status == AchievementStatus.APPROVED
-    if category and category != 'all':
-        achievement_filter = achievement_filter & (Achievement.category == category)
+    if categories:
+        achievement_filter = achievement_filter & (Achievement.category.in_(categories))
 
-    include_gpa_bonus = not category or category == 'all'
+    include_gpa_bonus = not categories
     achievement_points = func.coalesce(func.sum(Achievement.points), 0)
     total_points_expr = (
         achievement_points + aggregated_gpa_bonus_expr(Users.session_gpa, include_bonus=include_gpa_bonus)
@@ -96,7 +99,13 @@ async def _build_leaderboard_payload(user: Users, db: AsyncSession, education_le
         .filter(Users.role == UserRole.STUDENT, Users.status == UserStatus.ACTIVE)
     )
     stmt = _apply_student_scope(stmt, user, education_level, course, group)
-    stmt = stmt.group_by(Users.id).order_by(desc('total_points'), desc('achievements_count'))
+    stmt = stmt.group_by(Users.id)
+    # When directions are selected, rank only students who have matching documents:
+    # OR = at least one selected direction, AND = every selected direction.
+    if categories:
+        min_distinct = len(categories) if (category_logic == 'and' and len(categories) > 1) else 1
+        stmt = stmt.having(func.count(func.distinct(Achievement.category)) >= min_distinct)
+    stmt = stmt.order_by(desc('total_points'), desc('achievements_count'))
 
     result = await db.execute(stmt)
     rows = result.all()
@@ -124,7 +133,7 @@ async def _build_leaderboard_payload(user: Users, db: AsyncSession, education_le
         for level, by_course in GROUP_MAPPING.items()
     }
 
-    params = _build_query_params(education_level, course, category, group)
+    params = _build_query_params(education_level, course, categories, group, category_logic)
     export_query = urlencode(params)
 
     return {
@@ -133,7 +142,9 @@ async def _build_leaderboard_payload(user: Users, db: AsyncSession, education_le
         'my_points': my_points,
         'current_education_level': education_level,
         'current_course': course,
-        'current_category': category or 'all',
+        'current_category': categories[0] if len(categories) == 1 else 'all',
+        'current_categories': categories,
+        'current_category_logic': category_logic if len(categories) > 1 else 'or',
         'current_group': group or 'all',
         'categories': [item.value if hasattr(item, 'value') else str(item) for item in AchievementCategory],
         'education_levels': AVAILABLE_EDUCATION_LEVELS,
@@ -152,6 +163,8 @@ async def leaderboard(
     education_level: str | None = Query(None),
     course: str | None = Query(None),
     category: str | None = Query(None),
+    categories: list[str] | None = Query(None),
+    category_logic: str = Query('or'),
     group: str | None = Query(None),
     current_user=Depends(auth),
     db: AsyncSession = Depends(get_db),
@@ -163,7 +176,8 @@ async def leaderboard(
     scoped_education_level = _scoped_education_level(current_user, education_level)
     scoped_course = _scoped_course(current_user, course_int)
     scoped_group = group or 'all'
-    return await _build_leaderboard_payload(current_user, db, scoped_education_level, scoped_course, category, scoped_group)
+    selected = categories if categories else ([category] if category else [])
+    return await _build_leaderboard_payload(current_user, db, scoped_education_level, scoped_course, selected, scoped_group, category_logic)
 
 
 @router.get('/export')
@@ -171,6 +185,8 @@ async def export_leaderboard(
     education_level: str | None = Query(None),
     course: str | None = Query(None),
     category: str | None = Query(None),
+    categories: list[str] | None = Query(None),
+    category_logic: str = Query('or'),
     group: str | None = Query(None),
     current_user=Depends(auth),
     db: AsyncSession = Depends(get_db),
@@ -182,7 +198,8 @@ async def export_leaderboard(
     scoped_education_level = _scoped_education_level(current_user, education_level)
     scoped_course = _scoped_course(current_user, course_int)
     scoped_group = group or 'all'
-    payload = await _build_leaderboard_payload(current_user, db, scoped_education_level, scoped_course, category, scoped_group)
+    selected = categories if categories else ([category] if category else [])
+    payload = await _build_leaderboard_payload(current_user, db, scoped_education_level, scoped_course, selected, scoped_group, category_logic)
 
     output = io.StringIO()
     writer = csv.writer(output, delimiter=';')
