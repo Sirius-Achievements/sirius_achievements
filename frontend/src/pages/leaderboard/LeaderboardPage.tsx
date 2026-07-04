@@ -223,10 +223,10 @@ export function LeaderboardPage() {
     }
 
     const applyHighlight = () => {
-      target.style.boxShadow = '0 0 0 3px var(--theme-accent, #6d5ef3), 0 18px 36px rgba(15, 23, 42, 0.18)'
+      target.style.boxShadow = '0 0 0 3px var(--theme-accent, #4f46e5), 0 18px 36px rgba(15, 23, 42, 0.18)'
       target.style.transform = 'translateY(-2px)'
       target.style.backgroundColor = 'var(--theme-accent-soft, #eef2ff)'
-      target.style.borderColor = 'var(--theme-accent, #6d5ef3)'
+      target.style.borderColor = 'var(--theme-accent, #4f46e5)'
       target.style.position = 'relative'
       target.style.zIndex = '1'
 
@@ -463,10 +463,10 @@ export function LeaderboardPage() {
             </div>
           ) : <div className="hidden md:block"></div>}
 
-          <div data-leaderboard-self={podium[0]?.is_me ? 'true' : undefined} className="order-1 md:order-2 bg-surface rounded-xl shadow-sm p-6 flex flex-col items-center relative transition-all duration-500" style={{ borderTop: '4px solid var(--theme-accent, #6d5ef3)' }}>
-            <div className="absolute -top-4 left-1/2 transform -translate-x-1/2 w-8 h-8 text-white rounded-full flex items-center justify-center text-xs font-bold shadow-md" style={{ background: 'var(--theme-accent, #6d5ef3)' }}>1</div>
+          <div data-leaderboard-self={podium[0]?.is_me ? 'true' : undefined} className="order-1 md:order-2 bg-surface rounded-xl shadow-sm p-6 flex flex-col items-center relative transition-all duration-500" style={{ borderTop: '4px solid var(--theme-accent, #4f46e5)' }}>
+            <div className="absolute -top-4 left-1/2 transform -translate-x-1/2 w-8 h-8 text-white rounded-full flex items-center justify-center text-xs font-bold shadow-md" style={{ background: 'var(--theme-accent, #4f46e5)' }}>1</div>
             <div className="mt-2 mb-3">{podium[0]?.user.avatar_path ? <img src={buildMediaUrl(podium[0].user.avatar_path)} className="w-20 h-20 rounded-full object-cover border border-slate-200" /> : <div className="w-20 h-20 rounded-full bg-indigo-50 flex items-center justify-center text-2xl font-bold text-indigo-600 border border-indigo-100">{podium[0]?.user.first_name.slice(0, 1)}</div>}</div>
-            <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-center"><Link to={buildUserLink(podium[0], isStaff)} className="font-bold text-slate-900 text-base hover:text-indigo-600">{podium[0]?.user.first_name} {podium[0]?.user.last_name}</Link><div className="inline-flex text-sm font-bold px-4 py-1.5 rounded-md" style={{ background: 'var(--theme-accent-soft, #f0edff)', color: 'var(--theme-accent-strong, #5f4ee6)', border: '1px solid var(--theme-border-soft, #ebeff6)' }}>{podium[0]?.total_points ?? 0} баллов</div></div>
+            <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-center"><Link to={buildUserLink(podium[0], isStaff)} className="font-bold text-slate-900 text-base hover:text-indigo-600">{podium[0]?.user.first_name} {podium[0]?.user.last_name}</Link><div className="inline-flex text-sm font-bold px-4 py-1.5 rounded-md" style={{ background: 'var(--theme-accent-soft, #eef2ff)', color: 'var(--theme-accent-strong, #4338ca)', border: '1px solid var(--theme-border-soft, #ebeff6)' }}>{podium[0]?.total_points ?? 0} баллов</div></div>
           </div>
 
           {podium[2] ? (
