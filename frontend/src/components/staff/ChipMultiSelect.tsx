@@ -26,9 +26,24 @@ interface ChipMultiSelectProps {
   onToggle: (value: string) => void
   labelFor?: (value: string) => string
   onReset?: () => void
+  // Optional OR/AND toggle, shown only when 2+ values are selected.
+  // OR = matches any of the selected; AND = owner has all of the selected.
+  logic?: 'or' | 'and'
+  onLogicChange?: (logic: 'or' | 'and') => void
+  andHint?: string
 }
 
-export function ChipMultiSelect({ label, options, selected, onToggle, labelFor, onReset }: ChipMultiSelectProps) {
+export function ChipMultiSelect({
+  label,
+  options,
+  selected,
+  onToggle,
+  labelFor,
+  onReset,
+  logic,
+  onLogicChange,
+  andHint,
+}: ChipMultiSelectProps) {
   return (
     <div>
       <div className="flex items-center justify-between mb-1">
@@ -46,6 +61,30 @@ export function ChipMultiSelect({ label, options, selected, onToggle, labelFor, 
           <ChipToggle key={o} active={selected.includes(o)} label={labelFor ? labelFor(o) : o} onClick={() => onToggle(o)} />
         ))}
       </div>
+      {logic && onLogicChange && selected.length > 1 ? (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <span className="text-[11px] font-semibold text-slate-500">Логика:</span>
+          <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-[11px] font-semibold">
+            <button
+              type="button"
+              onClick={() => onLogicChange('or')}
+              className={`px-3 py-1 rounded-md transition-colors ${logic === 'or' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              Любое из
+            </button>
+            <button
+              type="button"
+              onClick={() => onLogicChange('and')}
+              className={`px-3 py-1 rounded-md transition-colors ${logic === 'and' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              Все сразу
+            </button>
+          </div>
+          <span className="text-[11px] text-slate-400">
+            {logic === 'and' ? andHint ?? 'у владельца есть все выбранные' : 'подходит любое из выбранных'}
+          </span>
+        </div>
+      ) : null}
     </div>
   )
 }

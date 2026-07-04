@@ -1,10 +1,20 @@
-from sqlalchemy import case, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import selectinload
 from app.repositories.admin.base_crud_repository import BaseCrudRepository
 from app.models.achievement import Achievement
 from app.models.enums import AchievementLevel, AchievementResult, AchievementStatus
 from app.models.user import Users
 from app.utils.search import escape_like
+
+
+def _owners_with_all(field, values):
+    """Subquery of user_ids whose achievements cover EVERY one of `values` for `field`."""
+    return (
+        select(Achievement.user_id)
+        .filter(field.in_(values))
+        .group_by(Achievement.user_id)
+        .having(func.count(func.distinct(field)) == len(values))
+    )
 
 
 class AchievementRepository(BaseCrudRepository):
@@ -27,6 +37,9 @@ class AchievementRepository(BaseCrudRepository):
             categories=None,
             levels=None,
             results=None,
+            category_logic: str = "or",
+            level_logic: str = "or",
+            result_logic: str = "or",
     ):
         stmt = select(self.model).options(selectinload(self.model.user))
         if owner_education_level is not None or owner_courses or owner_groups or owner_id is not None:
@@ -60,18 +73,26 @@ class AchievementRepository(BaseCrudRepository):
         else:
             stmt = stmt.filter(self.model.status != AchievementStatus.ARCHIVED)
 
+        # For a multi-value dimension: OR = row matches any selected value; AND =
+        # keep only rows whose OWNER has documents covering every selected value.
         if categories:
             stmt = stmt.filter(self.model.category.in_(categories))
+            if category_logic == "and" and len(categories) > 1:
+                stmt = stmt.filter(self.model.user_id.in_(_owners_with_all(self.model.category, categories)))
         elif category and category != "all":
             stmt = stmt.filter(self.model.category == category)
 
         if levels:
             stmt = stmt.filter(self.model.level.in_(levels))
+            if level_logic == "and" and len(levels) > 1:
+                stmt = stmt.filter(self.model.user_id.in_(_owners_with_all(self.model.level, levels)))
         elif level and level != "all":
             stmt = stmt.filter(self.model.level == level)
 
         if results:
             stmt = stmt.filter(self.model.result.in_(results))
+            if result_logic == "and" and len(results) > 1:
+                stmt = stmt.filter(self.model.user_id.in_(_owners_with_all(self.model.result, results)))
         elif result and result != "all":
             stmt = stmt.filter(self.model.result == result)
 
