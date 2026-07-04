@@ -26,6 +26,9 @@ export function ModerationAchievementsPage() {
   const [categorySel, setCategorySel] = useState<string[]>([])
   const [levelSel, setLevelSel] = useState<string[]>([])
   const [resultSel, setResultSel] = useState<string[]>([])
+  const [categoryLogic, setCategoryLogic] = useState<'or' | 'and'>('or')
+  const [levelLogic, setLevelLogic] = useState<'or' | 'and'>('or')
+  const [resultLogic, setResultLogic] = useState<'or' | 'and'>('or')
   const [sortBy, setSortBy] = useState('oldest')
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
@@ -42,9 +45,12 @@ export function ModerationAchievementsPage() {
       categories: categorySel.length ? categorySel : undefined,
       levels: levelSel.length ? levelSel : undefined,
       results: resultSel.length ? resultSel : undefined,
+      category_logic: categorySel.length > 1 && categoryLogic === 'and' ? 'and' : undefined,
+      level_logic: levelSel.length > 1 && levelLogic === 'and' ? 'and' : undefined,
+      result_logic: resultSel.length > 1 && resultLogic === 'and' ? 'and' : undefined,
       sort_by: sortBy,
     }),
-    [categorySel, levelSel, page, query, resultSel, sortBy],
+    [categorySel, categoryLogic, levelSel, levelLogic, page, query, resultSel, resultLogic, sortBy],
   )
 
   const toggleIn = (setter: Dispatch<SetStateAction<string[]>>) => (value: string) =>
@@ -204,15 +210,15 @@ export function ModerationAchievementsPage() {
           />
 
           <div className="w-full">
-            <ChipMultiSelect label="Категория" options={Object.values(AchievementCategory)} selected={categorySel} onToggle={toggleIn(setCategorySel)} onReset={() => setCategorySel([])} />
+            <ChipMultiSelect label="Категория" options={Object.values(AchievementCategory)} selected={categorySel} onToggle={toggleIn(setCategorySel)} onReset={() => setCategorySel([])} logic={categoryLogic} onLogicChange={setCategoryLogic} andHint="у студента есть документы всех выбранных направлений" />
           </div>
 
           <div className="w-full">
-            <ChipMultiSelect label="Уровень" options={Object.values(AchievementLevel)} selected={levelSel} onToggle={toggleIn(setLevelSel)} onReset={() => setLevelSel([])} />
+            <ChipMultiSelect label="Уровень" options={Object.values(AchievementLevel)} selected={levelSel} onToggle={toggleIn(setLevelSel)} onReset={() => setLevelSel([])} logic={levelLogic} onLogicChange={setLevelLogic} andHint="у студента есть документы всех выбранных уровней" />
           </div>
 
           <div className="w-full">
-            <ChipMultiSelect label="Результат" options={Object.values(AchievementResult)} selected={resultSel} onToggle={toggleIn(setResultSel)} onReset={() => setResultSel([])} />
+            <ChipMultiSelect label="Результат" options={Object.values(AchievementResult)} selected={resultSel} onToggle={toggleIn(setResultSel)} onReset={() => setResultSel([])} logic={resultLogic} onLogicChange={setResultLogic} andHint="у студента есть документы всех выбранных результатов" />
           </div>
 
           <div className="w-full sm:w-[170px]">

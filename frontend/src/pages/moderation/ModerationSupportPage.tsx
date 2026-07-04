@@ -114,6 +114,7 @@ export function ModerationSupportPage() {
   const [data, setData] = useState<SupportListResponse | null>(null)
   const [query, setQuery] = useState('')
   const [statusSel, setStatusSel] = useState<string[]>([])
+  const [statusLogic, setStatusLogic] = useState<'or' | 'and'>('or')
   const [sortBy, setSortBy] = useState(tab === 'chats' ? 'updated_at' : 'created_at')
   const [sortOrder, setSortOrder] = useState('desc')
   const [page, setPage] = useState(1)
@@ -124,6 +125,7 @@ export function ModerationSupportPage() {
   useEffect(() => {
     setQuery('')
     setStatusSel([])
+    setStatusLogic('or')
     setPage(1)
     setSortOrder('desc')
     setSortBy(tab === 'chats' ? 'updated_at' : 'created_at')
@@ -137,11 +139,12 @@ export function ModerationSupportPage() {
     () => ({
       page,
       statuses: statusSel.length ? statusSel : undefined,
+      status_logic: statusSel.length > 1 && statusLogic === 'and' ? 'and' : undefined,
       query: query || undefined,
       sort_by: sortBy,
       sort_order: sortOrder,
     }),
-    [page, query, sortBy, sortOrder, statusSel],
+    [page, query, sortBy, sortOrder, statusSel, statusLogic],
   )
 
   const load = async () => {
@@ -182,7 +185,7 @@ export function ModerationSupportPage() {
 
   useEffect(() => {
     setPage(1)
-  }, [query, statusSel, sortBy, sortOrder])
+  }, [query, statusSel, statusLogic, sortBy, sortOrder])
 
   useEffect(() => {
     const trimmed = query.trim()
@@ -341,6 +344,9 @@ export function ModerationSupportPage() {
                 onToggle={toggleStatus}
                 labelFor={(s) => ({ open: 'Открытые', in_progress: 'В работе', closed: 'Закрытые' })[s] ?? s}
                 onReset={() => setStatusSel([])}
+                logic={statusLogic}
+                onLogicChange={setStatusLogic}
+                andHint="у студента есть обращения во всех выбранных состояниях"
               />
             </div>
           ) : null}

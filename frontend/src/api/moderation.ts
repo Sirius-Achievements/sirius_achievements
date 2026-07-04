@@ -24,6 +24,9 @@ export interface ModerationAchievementsParams {
   categories?: string[]
   levels?: string[]
   results?: string[]
+  category_logic?: string
+  level_logic?: string
+  result_logic?: string
   sort_by?: string
 }
 

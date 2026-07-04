@@ -14,6 +14,7 @@ from app.infrastructure.database import get_db
 from app.middlewares.api_auth_middleware import auth
 from app.models.achievement import Achievement
 from app.models.enums import AchievementCategory, AchievementLevel, AchievementResult, AchievementStatus, UserRole, UserStatus
+from app.repositories.admin.achievement_repository import _owners_with_all
 from app.models.user import Users
 from app.services.audit_service import log_action
 from app.services.points_calculator import calculate_points
@@ -189,6 +190,9 @@ async def pending_achievements(
     categories: list[str] | None = Query(default=None),
     levels: list[str] | None = Query(default=None),
     results: list[str] | None = Query(default=None),
+    category_logic: str = Query(default='or'),
+    level_logic: str = Query(default='or'),
+    result_logic: str = Query(default='or'),
     sort_by: str = Query(default='oldest'),
     current_user=Depends(require_moderator),
     db: AsyncSession = Depends(get_db),
@@ -220,14 +224,20 @@ async def pending_achievements(
 
     if categories:
         stmt = stmt.filter(Achievement.category.in_(categories))
+        if category_logic == 'and' and len(categories) > 1:
+            stmt = stmt.filter(Achievement.user_id.in_(_owners_with_all(Achievement.category, categories)))
     elif category and category != 'all':
         stmt = stmt.filter(Achievement.category == category)
     if levels:
         stmt = stmt.filter(Achievement.level.in_(levels))
+        if level_logic == 'and' and len(levels) > 1:
+            stmt = stmt.filter(Achievement.user_id.in_(_owners_with_all(Achievement.level, levels)))
     elif level and level != 'all':
         stmt = stmt.filter(Achievement.level == level)
     if results:
         stmt = stmt.filter(Achievement.result.in_(results))
+        if result_logic == 'and' and len(results) > 1:
+            stmt = stmt.filter(Achievement.user_id.in_(_owners_with_all(Achievement.result, results)))
     elif result and result != 'all':
         stmt = stmt.filter(Achievement.result == result)
 

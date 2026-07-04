@@ -116,6 +116,7 @@ async def moderation_support_chats(
     page: int = Query(default=1, ge=1, le=1000),
     status: str = '',
     statuses: list[str] | None = Query(default=None),
+    status_logic: str = 'or',
     query: str = '',
     sort_by: str = 'updated_at',
     sort_order: str = 'desc',
@@ -123,7 +124,7 @@ async def moderation_support_chats(
     db: AsyncSession = Depends(get_db),
 ):
     ticket_repo = SupportTicketRepository(db)
-    filters = {'page': page}
+    filters = {'page': page, 'status_logic': status_logic}
     if statuses:
         filters['statuses'] = statuses
     elif status:
@@ -184,6 +185,7 @@ async def moderation_support_all(
     page: int = Query(default=1, ge=1, le=1000),
     status: str = '',
     statuses: list[str] | None = Query(default=None),
+    status_logic: str = 'or',
     query: str = '',
     sort_by: str = 'created_at',
     sort_order: str = 'desc',
@@ -191,7 +193,7 @@ async def moderation_support_all(
     db: AsyncSession = Depends(get_db),
 ):
     ticket_repo = SupportTicketRepository(db)
-    filters = {'page': page}
+    filters = {'page': page, 'status_logic': status_logic}
     if statuses:
         filters['statuses'] = statuses
     elif status:

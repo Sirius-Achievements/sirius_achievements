@@ -11,7 +11,8 @@ from app.utils.search import escape_like
 
 def _apply_status_filter(stmt, filters: dict):
     """Filter tickets by one or many statuses (OR within). 'closed' also matches
-    archived tickets; when 'closed' is not selected, archived tickets are hidden."""
+    archived tickets; when 'closed' is not selected, archived tickets are hidden.
+    With logic='and', keep only tickets whose OWNER has tickets in every selected state."""
     selected = list(filters.get('statuses') or [])
     single = filters.get('status')
     if single and single not in selected:
@@ -31,6 +32,15 @@ def _apply_status_filter(stmt, filters: dict):
         stmt = stmt.filter(SupportTicket.archived_at.is_(None))
     if conditions:
         stmt = stmt.filter(or_(*conditions))
+
+    if filters.get('status_logic') == 'and' and len(selected) > 1:
+        owners = (
+            select(SupportTicket.user_id)
+            .filter(SupportTicket.status.in_(selected))
+            .group_by(SupportTicket.user_id)
+            .having(func.count(func.distinct(SupportTicket.status)) == len(selected))
+        )
+        stmt = stmt.filter(SupportTicket.user_id.in_(owners))
     return stmt
 
 
