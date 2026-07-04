@@ -166,17 +166,22 @@ async def leaderboard(
     categories: list[str] | None = Query(None),
     category_logic: str = Query('or'),
     group: str | None = Query(None),
+    scope: str | None = Query(None),
     current_user=Depends(auth),
     db: AsyncSession = Depends(get_db),
 ):
     if current_user.status == UserStatus.DELETED:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Аккаунт удалён. Доступна только поддержка.')
 
+    selected = categories if categories else ([category] if category else [])
+    # scope=global lets a student break out of their own stream and see everyone.
+    if scope == 'global' and not current_user.is_staff:
+        return await _build_leaderboard_payload(current_user, db, 'all', 0, selected, 'all', category_logic)
+
     course_int = int(course) if course and course.isdigit() else None
     scoped_education_level = _scoped_education_level(current_user, education_level)
     scoped_course = _scoped_course(current_user, course_int)
     scoped_group = group or 'all'
-    selected = categories if categories else ([category] if category else [])
     return await _build_leaderboard_payload(current_user, db, scoped_education_level, scoped_course, selected, scoped_group, category_logic)
 
 

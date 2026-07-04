@@ -6,7 +6,7 @@ import { useToast } from '@/hooks/useToast'
 import { EducationLevel } from '@/types/enums'
 import { getAuthFlowEmail, getAuthFlowRemainingSeconds, hasStoredAuthFlow, saveAuthFlow } from '@/utils/authFlow'
 import { getErrorMessage } from '@/utils/http'
-import { coursesForEducationLevel, groupsForEducationLevel } from '@/utils/labels'
+import { courseLabel, coursesForEducationLevel, groupsForEducationLevel } from '@/utils/labels'
 
 function stripEmoji(value: string): string {
   return value.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, '').replace(/\s{2,}/g, ' ')
@@ -237,7 +237,7 @@ export function RegisterPage() {
               </option>
               {courseOptions.map((item) => (
                 <option key={item} value={item}>
-                  {item} курс
+                  {courseLabel(item)}
                 </option>
               ))}
             </select>

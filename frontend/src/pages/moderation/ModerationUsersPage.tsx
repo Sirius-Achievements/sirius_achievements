@@ -10,7 +10,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
 import type { User } from '@/types/user'
 import { getErrorMessage } from '@/utils/http'
-import { roleLabel } from '@/utils/labels'
+import { courseLabel, roleLabel } from '@/utils/labels'
 import { buildMediaUrl } from '@/utils/media'
 import { getTotalPages, paginateItems } from '@/utils/pagination'
 
@@ -317,7 +317,7 @@ export function ModerationUsersPage() {
                       <br />
                       {user.education_level ? (
                         <span className="text-[10px] text-slate-500">
-                          {user.education_level} {user.course ? `${user.course} курс` : ''}
+                          {user.education_level} {user.course ? courseLabel(user.course) : ''}
                           {user.study_group ? <><br />{user.study_group}</> : null}
                         </span>
                       ) : (

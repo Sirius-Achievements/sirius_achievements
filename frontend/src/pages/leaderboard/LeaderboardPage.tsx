@@ -8,6 +8,7 @@ import { PaginationFooter } from '@/components/ui/PaginationFooter'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
 import { getErrorMessage } from '@/utils/http'
+import { courseLabel } from '@/utils/labels'
 import { buildMediaUrl } from '@/utils/media'
 import { getTotalPages, paginateItems } from '@/utils/pagination'
 
@@ -44,7 +45,7 @@ function leagueDescription(data: LeaderboardResponse | null, isStaff: boolean) {
     return 'Глобальный рейтинг (Все студенты)'
   }
 
-  const scope = `${data.current_education_level !== 'all' ? data.current_education_level : 'Все уровни'}, ${data.current_course !== 0 ? `${data.current_course} курс` : 'Все курсы'}${data.current_group !== 'all' ? `, группа ${data.current_group}` : ''}`
+  const scope = `${data.current_education_level !== 'all' ? data.current_education_level : 'Все уровни'}, ${data.current_course !== 0 ? courseLabel(data.current_course) : 'Все курсы'}${data.current_group !== 'all' ? `, группа ${data.current_group}` : ''}`
   return `${isStaff ? 'Лига' : 'Ваша лига'}: ${scope}`
 }
 
@@ -72,6 +73,7 @@ export function LeaderboardPage() {
   const categories = searchParams.getAll('categories')
   const categoryLogic = (searchParams.get('category_logic') as 'or' | 'and') ?? 'or'
   const group = searchParams.get('group') ?? undefined
+  const isGlobal = searchParams.get('scope') === 'global'
   const categoriesKey = categories.join(',')
 
   const filters = useMemo(
@@ -81,11 +83,20 @@ export function LeaderboardPage() {
       categories: categories.length ? categories : undefined,
       category_logic: categories.length > 1 && categoryLogic === 'and' ? 'and' : undefined,
       group,
+      scope: isGlobal ? 'global' : undefined,
     }),
     // categoriesKey captures the array contents for memo stability
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [categoriesKey, categoryLogic, course, educationLevel, group]
+    [categoriesKey, categoryLogic, course, educationLevel, group, isGlobal]
   )
+
+  const setScope = (global: boolean) => {
+    const next = new URLSearchParams(searchParams)
+    if (global) next.set('scope', 'global')
+    else next.delete('scope')
+    setSearchParams(next)
+    setPage(1)
+  }
 
   const toggleCategory = (value: string) => {
     const next = new URLSearchParams(searchParams)
@@ -397,6 +408,20 @@ export function LeaderboardPage() {
             />
           </div>
 
+          {!isStaff ? (
+            <div className="w-full">
+              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5 tracking-wider">Охват</label>
+              <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-xs font-semibold">
+                <button type="button" onClick={() => setScope(false)} className={`px-3 py-1.5 rounded-md transition-colors ${!isGlobal ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-700'}`}>
+                  Мой поток
+                </button>
+                <button type="button" onClick={() => setScope(true)} className={`px-3 py-1.5 rounded-md transition-colors ${isGlobal ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-700'}`}>
+                  Глобально
+                </button>
+              </div>
+            </div>
+          ) : null}
+
           {isStaff ? (
             <>
               <div className="w-full sm:w-[170px]">
@@ -410,7 +435,7 @@ export function LeaderboardPage() {
                 <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5 tracking-wider">Курс</label>
                 <select value={String(data?.current_course ?? 0)} onChange={(event) => updateFilter('course', event.target.value)} disabled={(data?.current_education_level || 'all') === 'all'} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-700 focus:bg-surface focus:border-indigo-600 outline-none h-[38px] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
                   <option value="0">Все курсы</option>
-                  {courseOptions.map((item) => <option key={item} value={item}>{item} курс</option>)}
+                  {courseOptions.map((item) => <option key={item} value={item}>{courseLabel(item)}</option>)}
                 </select>
               </div>
             </>
@@ -474,7 +499,7 @@ export function LeaderboardPage() {
                             {row.user.first_name} {row.user.last_name}
                             {row.is_me ? <span className="ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-indigo-100 text-indigo-700">Вы</span> : null}
                           </Link>
-                          <div className="text-[10px] text-slate-400">{row.user.education_level || ''} {row.user.course ? `${row.user.course} курс` : ''} {row.user.study_group ? `• ${row.user.study_group}` : ''}</div>
+                          <div className="text-[10px] text-slate-400">{row.user.education_level || ''} {row.user.course ? courseLabel(row.user.course) : ''} {row.user.study_group ? `• ${row.user.study_group}` : ''}</div>
                         </div>
                       </div>
                     </td>

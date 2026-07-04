@@ -14,7 +14,7 @@ import { useToast } from '@/hooks/useToast'
 import type { User } from '@/types/user'
 import { formatDateTime } from '@/utils/formatDate'
 import { getErrorMessage } from '@/utils/http'
-import { coursesForEducationLevel, roleLabel, userStatusLabel } from '@/utils/labels'
+import { courseLabel, coursesForEducationLevel, roleLabel, userStatusLabel } from '@/utils/labels'
 
 const USERS_PAGE_SIZE = 10
 
@@ -245,7 +245,7 @@ export function UsersPage() {
 
           {courseOptions.length > 0 ? (
             <div className="w-full">
-              <ChipMultiSelect label="Курс" options={courseOptions} selected={courseSel} onToggle={toggleIn(setCourseSel)} labelFor={(c) => `${c} курс`} onReset={() => setCourseSel([])} />
+              <ChipMultiSelect label="Курс" options={courseOptions} selected={courseSel} onToggle={toggleIn(setCourseSel)} labelFor={(c) => courseLabel(c)} onReset={() => setCourseSel([])} />
             </div>
           ) : null}
 
@@ -310,7 +310,7 @@ export function UsersPage() {
                         <>
                           <span className="block text-xs text-slate-700">{item.education_level}</span>
                           <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                            {item.course ? `${item.course} курс` : '—'}
+                            {item.course ? courseLabel(item.course) : '—'}
                           </span>
                           {item.study_group ? <span className="block text-[10px] text-slate-400">{item.study_group}</span> : null}
                         </>

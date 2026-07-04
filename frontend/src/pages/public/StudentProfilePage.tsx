@@ -8,6 +8,7 @@ import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { ThemeToggle } from '@/components/ui/ThemeToggle'
 import { useAuth } from '@/hooks/useAuth'
 import { getErrorMessage } from '@/utils/http'
+import { courseLabel } from '@/utils/labels'
 import { buildMediaUrl } from '@/utils/media'
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
@@ -311,7 +312,7 @@ function StudentProfilePageInner() {
               <p className="text-sm text-slate-400 mt-1">{data.student.study_group}</p>
             ) : null}
             <p className="text-sm text-slate-500 mt-1">
-              {data.student.education_level ? `${data.student.education_level}${data.student.course ? `, ${data.student.course} курс` : ''}` : ''}
+              {data.student.education_level ? `${data.student.education_level}${data.student.course ? `, ${courseLabel(data.student.course)}` : ''}` : ''}
             </p>
           </div>
 
@@ -330,10 +331,20 @@ function StudentProfilePageInner() {
                 <div className="text-[11px] text-slate-500 uppercase tracking-wider">Оценка</div>
               </div>
             ) : null}
+            {data.group_rank ? (
+              <div className="rounded-2xl border border-indigo-100 bg-indigo-50/70 px-4 py-3 text-center">
+                <div className="text-2xl font-bold text-indigo-500">#{data.group_rank}</div>
+                <div className="text-[11px] text-slate-500 uppercase tracking-wider">
+                  В группе{data.group_total ? ` из ${data.group_total}` : ''}
+                </div>
+              </div>
+            ) : null}
             {data.rank ? (
               <div className="rounded-2xl border border-amber-100 bg-amber-50/70 px-4 py-3 text-center">
                 <div className="text-2xl font-bold text-amber-500">#{data.rank}</div>
-                <div className="text-[11px] text-slate-500 uppercase tracking-wider">Рейтинг</div>
+                <div className="text-[11px] text-slate-500 uppercase tracking-wider">
+                  Глобально{data.global_total ? ` из ${data.global_total}` : ''}
+                </div>
               </div>
             ) : null}
           </div>
@@ -351,7 +362,7 @@ function StudentProfilePageInner() {
               </div>
               <div className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
                 <div className="text-[11px] uppercase tracking-wider text-slate-400">Курс</div>
-                <div className="mt-1 text-sm font-semibold text-slate-800">{data.student.course ? `${data.student.course} курс` : 'Не указан'}</div>
+                <div className="mt-1 text-sm font-semibold text-slate-800">{data.student.course ? courseLabel(data.student.course) : 'Не указан'}</div>
               </div>
               <div className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
                 <div className="text-[11px] uppercase tracking-wider text-slate-400">Группа</div>

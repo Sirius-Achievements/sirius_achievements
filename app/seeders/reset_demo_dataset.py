@@ -39,7 +39,9 @@ from app.models.user_note import UserNote
 from app.models.user_token import UserToken
 from app.services.points_calculator import calculate_points
 from app.utils import storage
-from app.utils.education import groups_for
+from app.utils.education import COURSE_MAPPING, groups_for
+
+SPECIALIST_COURSES = list(range(1, COURSE_MAPPING[EducationLevel.SPECIALIST.value] + 1))
 from app.utils.password import hash_password
 
 
@@ -333,7 +335,7 @@ async def ensure_staff_users(db, password_hash: str, now: datetime) -> tuple[Use
             "last_name": "Модератор",
             "role": UserRole.MODERATOR,
             "education_level": EducationLevel.SPECIALIST,
-            "moderator_courses": "1,2",
+            "moderator_courses": ",".join(str(c) for c in SPECIALIST_COURSES),
             "moderator_groups": ",".join(groups_for(EducationLevel.SPECIALIST.value)),
         },
     ]
@@ -377,13 +379,10 @@ async def seed_users(db, moderator: Users, password_hash: str, now: datetime) ->
     deleted_students: list[Users] = []
     pending_users: list[Users] = []
 
-    course_groups = {
-        1: groups_for(EducationLevel.SPECIALIST.value, 1),
-        2: groups_for(EducationLevel.SPECIALIST.value, 2),
-    }
+    course_groups = {c: groups_for(EducationLevel.SPECIALIST.value, c) for c in SPECIALIST_COURSES}
 
     global_index = 0
-    for course in (1, 2):
+    for course in SPECIALIST_COURSES:
         first_group, second_group = course_groups[course]
         for position in range(ACTIVE_STUDENTS_PER_COURSE):
             first_name, last_name = build_name(global_index)
@@ -408,7 +407,7 @@ async def seed_users(db, moderator: Users, password_hash: str, now: datetime) ->
             global_index += 1
 
     for index in range(DELETED_STUDENTS_COUNT):
-        course = 1 if index < DELETED_STUDENTS_COUNT // 2 else 2
+        course = SPECIALIST_COURSES[index % len(SPECIALIST_COURSES)]
         groups = course_groups[course]
         group = groups[index % len(groups)]
         first_name, last_name = build_name(300 + index)
@@ -430,7 +429,7 @@ async def seed_users(db, moderator: Users, password_hash: str, now: datetime) ->
         )
 
     for index in range(PENDING_APPLICATIONS_COUNT):
-        course = 1 if index < PENDING_APPLICATIONS_COUNT // 2 else 2
+        course = SPECIALIST_COURSES[index % len(SPECIALIST_COURSES)]
         groups = course_groups[course]
         group = groups[index % len(groups)]
         first_name, last_name = build_name(500 + index)

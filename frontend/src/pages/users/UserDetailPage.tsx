@@ -11,7 +11,7 @@ import { AchievementStatus } from '@/types/enums'
 import { UserDetailResponse, UserNote } from '@/types/user'
 import { openDocumentPreview } from '@/utils/documentPreview'
 import { getErrorMessage } from '@/utils/http'
-import { coursesForEducationLevel, groupsForEducationLevel, roleLabel, userStatusLabel } from '@/utils/labels'
+import { courseLabel, coursesForEducationLevel, groupsForEducationLevel, roleLabel, userStatusLabel } from '@/utils/labels'
 import { buildMediaUrl } from '@/utils/media'
 
 const RADAR_CATS = ['Спорт', 'Наука', 'Искусство', 'Волонтёрство', 'Хакатон', 'Патриотизм', 'Проекты', 'Другое']
@@ -555,7 +555,7 @@ export function UserDetailPage() {
                         {moderatorCourseOptions.map((course) => (
                           <label key={course} className="inline-flex items-center gap-1.5 rounded border border-indigo-200 bg-surface px-2.5 py-1.5 text-xs text-slate-700">
                             <input type="checkbox" checked={moderatorCourses.includes(course)} onChange={() => toggleModeratorCourse(course)} />
-                            {course} курс
+                            {courseLabel(course)}
                           </label>
                         ))}
                       </div>
@@ -582,9 +582,9 @@ export function UserDetailPage() {
             <div className="px-5 py-3 border-b border-slate-100 bg-slate-50"><h3 className="text-sm font-bold text-slate-700">Информация</h3></div>
             <div className="p-5 space-y-3 text-sm">
               {detail.user.education_level ? <div className="flex justify-between items-center pb-2 border-b border-slate-50"><span className="text-slate-500 text-xs">Обучение / Зона</span><span className="font-medium text-slate-800">{detail.user.education_level}</span></div> : null}
-              {detail.user.role === 'MODERATOR' ? <div className="flex justify-between items-center pb-2 border-b border-slate-50 gap-4"><span className="text-slate-500 text-xs">Курсы модерации</span><span className="font-medium text-slate-800 text-right">{detail.user.moderator_courses?.length ? detail.user.moderator_courses.map((item) => `${item} курс`).join(', ') : 'Все'}</span></div> : null}
+              {detail.user.role === 'MODERATOR' ? <div className="flex justify-between items-center pb-2 border-b border-slate-50 gap-4"><span className="text-slate-500 text-xs">Курсы модерации</span><span className="font-medium text-slate-800 text-right">{detail.user.moderator_courses?.length ? detail.user.moderator_courses.map((item) => courseLabel(item)).join(', ') : 'Все'}</span></div> : null}
               {detail.user.role === 'MODERATOR' ? <div className="flex justify-between items-center pb-2 border-b border-slate-50 gap-4"><span className="text-slate-500 text-xs">Группы модерации</span><span className="font-medium text-slate-800 text-right">{detail.user.moderator_groups?.length ? detail.user.moderator_groups.join(', ') : 'Все'}</span></div> : null}
-              <div className="flex justify-between items-center pb-2 border-b border-slate-50"><span className="text-slate-500 text-xs">Курс</span><span className="font-medium text-slate-800">{detail.user.course ? `${detail.user.course} курс` : 'Не указан'}</span></div>
+              <div className="flex justify-between items-center pb-2 border-b border-slate-50"><span className="text-slate-500 text-xs">Курс</span><span className="font-medium text-slate-800">{detail.user.course ? courseLabel(detail.user.course) : 'Не указан'}</span></div>
               {detail.user.study_group ? <div className="flex justify-between items-center pb-2 border-b border-slate-50"><span className="text-slate-500 text-xs">Группа</span><span className="font-medium text-slate-800">{detail.user.study_group}</span></div> : null}
               <div className="flex justify-between items-center pb-2 border-b border-slate-50"><span className="text-slate-500 text-xs">Телефон</span><span className="font-medium text-slate-800">{detail.user.phone_number || 'Не указан'}</span></div>
               <div className="flex justify-between items-center pb-2 border-b border-slate-50"><span className="text-slate-500 text-xs">Регистрация</span><span className="font-medium text-slate-800">{detail.user.created_at ? new Date(detail.user.created_at).toLocaleDateString('ru-RU') : 'Дата не указана'}</span></div>

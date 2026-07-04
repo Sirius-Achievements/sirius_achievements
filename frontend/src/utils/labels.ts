@@ -37,13 +37,15 @@ export function achievementStatusLabel(status?: string | null): string {
 }
 
 export const COURSES_BY_EDUCATION_LEVEL: Record<string, number[]> = {
-  '\u0421\u043f\u0435\u0446\u0438\u0430\u043b\u0438\u0442\u0435\u0442': [1, 2],
+  '\u0421\u043f\u0435\u0446\u0438\u0430\u043b\u0438\u0442\u0435\u0442': [1, 2, 3],
 }
 
+// 1 \u043a\u0443\u0440\u0441 \u2192 \u0418\u041e\u041f-\u0418\u0422-26, 2 \u043a\u0443\u0440\u0441 \u2192 \u0418\u041e\u041f-\u0418\u0422-25, 3 \u043a\u0443\u0440\u0441 \u2192 \u0418\u041e\u041f-\u0418\u0422-24.
 export const GROUPS_BY_EDUCATION_AND_COURSE: Record<string, Record<number, string[]>> = {
   '\u0421\u043f\u0435\u0446\u0438\u0430\u043b\u0438\u0442\u0435\u0442': {
-    1: ['\u0418\u041e\u041f-\u0418\u0422-25/1', '\u0418\u041e\u041f-\u0418\u0422-25/2'],
-    2: ['\u0418\u041e\u041f-\u0418\u0422-24/1', '\u0418\u041e\u041f-\u0418\u0422-24/2'],
+    1: ['\u0418\u041e\u041f-\u0418\u0422-26/1', '\u0418\u041e\u041f-\u0418\u0422-26/2'],
+    2: ['\u0418\u041e\u041f-\u0418\u0422-25/1', '\u0418\u041e\u041f-\u0418\u0422-25/2'],
+    3: ['\u0418\u041e\u041f-\u0418\u0422-24/1', '\u0418\u041e\u041f-\u0418\u0422-24/2'],
   },
 }
 
@@ -57,4 +59,12 @@ export function groupsForEducationLevel(level?: string | null, course?: number |
   const byCourse = GROUPS_BY_EDUCATION_AND_COURSE[level] ?? {}
   if (course) return byCourse[Number(course)] ?? []
   return Object.values(byCourse).flat()
+}
+
+// Course label = its group family, e.g. 3 \u2192 "\u0418\u041e\u041f-\u0418\u0422-24" (per request, no "\u043a\u0443\u0440\u0441" word).
+export function courseLabel(course?: number | string | null, level = '\u0421\u043f\u0435\u0446\u0438\u0430\u043b\u0438\u0442\u0435\u0442'): string {
+  if (!course) return ''
+  const groups = groupsForEducationLevel(level, course)
+  if (groups.length) return groups[0].replace(/\/\d+$/, '')
+  return `${course} \u043a\u0443\u0440\u0441`
 }

@@ -23,6 +23,10 @@ export interface PublicStudentResponse {
   total_points: number
   total_docs: number
   rank: number | null
+  global_total?: number
+  group_rank?: number | null
+  group_total?: number
+  group_name?: string | null
   gpa_bonus: number
   chart_labels: string[]
   chart_points: number[]

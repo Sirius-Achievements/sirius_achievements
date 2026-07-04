@@ -4,7 +4,7 @@ import { reportsApi, type ScopeStudent } from '@/api/reports'
 import { SearchAutocompleteInput, type SearchSuggestionItem } from '@/components/staff/SearchAutocompleteInput'
 import { usersApi } from '@/api/users'
 import { AchievementCategory } from '@/types/enums'
-import { coursesForEducationLevel, groupsForEducationLevel } from '@/utils/labels'
+import { courseLabel, coursesForEducationLevel, groupsForEducationLevel } from '@/utils/labels'
 
 const EDUCATION_LEVELS = ['Специалитет']
 
@@ -438,7 +438,7 @@ export function ReportExportPanel() {
                   <option value="0">Все курсы</option>
                   {courseOptions.map((c) => (
                     <option key={c} value={c}>
-                      {c} курс
+                      {courseLabel(c)}
                     </option>
                   ))}
                 </select>
@@ -488,7 +488,7 @@ export function ReportExportPanel() {
                           {s.last_name} {s.first_name}
                         </span>
                         <span className="ml-auto text-[11px] text-slate-400">
-                          {[s.course ? `${s.course} курс` : null, s.study_group].filter(Boolean).join(' · ')}
+                          {[s.course ? courseLabel(s.course) : null, s.study_group].filter(Boolean).join(' · ')}
                         </span>
                       </label>
                     ))}

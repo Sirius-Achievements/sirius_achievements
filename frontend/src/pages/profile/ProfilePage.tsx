@@ -11,6 +11,7 @@ import { useToast } from '@/hooks/useToast'
 import { UserRole } from '@/types/enums'
 import { isImageFile, isPdfFile } from '@/utils/documentPreview'
 import { getErrorMessage } from '@/utils/http'
+import { courseLabel } from '@/utils/labels'
 import { buildMediaUrl } from '@/utils/media'
 
 Chart.register(...registerables)
@@ -619,7 +620,7 @@ export function ProfilePage() {
                       {profile.user.education_level ?? 'Не указано'}
                       {profile.user.course && (
                         <>
-                          <span className="mx-1 text-slate-300">&bull;</span>{profile.user.course} курс
+                          <span className="mx-1 text-slate-300">&bull;</span>{courseLabel(profile.user.course)}
                         </>
                       )}
                       {profile.user.study_group && (

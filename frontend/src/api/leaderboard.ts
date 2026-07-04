@@ -36,6 +36,7 @@ export interface LeaderboardParams {
   categories?: string[]
   category_logic?: string
   group?: string
+  scope?: string
 }
 
 export const leaderboardApi = {

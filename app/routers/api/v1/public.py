@@ -81,6 +81,29 @@ async def public_student_profile(
         if int(user_id) == int(student_id):
             rank = index
             break
+    global_total = len(leaderboard_rows)
+
+    # Rank within the student's own group (поток/группа).
+    group_rank = None
+    group_total = 0
+    if student.study_group:
+        group_stmt = (
+            select(Users.id, total_points_expr)
+            .outerjoin(Achievement, (Users.id == Achievement.user_id) & (Achievement.status == AchievementStatus.APPROVED))
+            .filter(
+                Users.role == UserRole.STUDENT,
+                Users.status == UserStatus.ACTIVE,
+                Users.study_group == student.study_group,
+            )
+            .group_by(Users.id)
+            .order_by(desc('total_points'))
+        )
+        group_rows = (await db.execute(group_stmt)).all()
+        group_total = len(group_rows)
+        for index, (user_id, _points) in enumerate(group_rows, 1):
+            if int(user_id) == int(student_id):
+                group_rank = index
+                break
 
     approved_rows = (
         await db.execute(
@@ -151,6 +174,10 @@ async def public_student_profile(
         'total_points': total_points,
         'total_docs': len(achievements),
         'rank': rank,
+        'global_total': global_total,
+        'group_rank': group_rank,
+        'group_total': group_total,
+        'group_name': student.study_group,
         'gpa_bonus': gpa_bonus,
         'chart_labels': chart_labels,
         'chart_points': chart_points,
