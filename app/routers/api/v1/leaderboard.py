@@ -77,7 +77,7 @@ def _build_query_params(education_level: str | None, course: int | None, categor
     return params
 
 
-async def _build_leaderboard_payload(user: Users, db: AsyncSession, education_level: str | None, course: int | None, categories: list[str] | None, group: str | None, category_logic: str = 'or'):
+async def _build_leaderboard_payload(user: Users, db: AsyncSession, education_level: str | None, course: int | None, categories: list[str] | None, group: str | None, category_logic: str = 'or', full_users: bool = False):
     categories = [c for c in (categories or []) if c and c != 'all']
     achievement_filter = Achievement.status == AchievementStatus.APPROVED
     if categories:
@@ -117,7 +117,7 @@ async def _build_leaderboard_payload(user: Users, db: AsyncSession, education_le
         if student.id == user.id:
             my_rank = index
             my_points = int(points or 0)
-        peer_view = serialize_user(student) if student.id == user.id else serialize_user_public(student)
+        peer_view = serialize_user(student) if (full_users or student.id == user.id) else serialize_user_public(student)
         leaderboard.append(
             {
                 'rank': index,
@@ -204,7 +204,7 @@ async def export_leaderboard(
     scoped_course = _scoped_course(current_user, course_int)
     scoped_group = group or 'all'
     selected = categories if categories else ([category] if category else [])
-    payload = await _build_leaderboard_payload(current_user, db, scoped_education_level, scoped_course, selected, scoped_group, category_logic)
+    payload = await _build_leaderboard_payload(current_user, db, scoped_education_level, scoped_course, selected, scoped_group, category_logic, full_users=True)
 
     output = io.StringIO()
     writer = csv.writer(output, delimiter=';')
@@ -214,9 +214,9 @@ async def export_leaderboard(
         user = row['user']
         writer.writerow([
             row['rank'],
-            user['first_name'],
-            user['last_name'],
-            user['email'],
+            user.get('first_name') or '',
+            user.get('last_name') or '',
+            user.get('email') or '',
             user.get('education_level') or '',
             user.get('course') or '',
             user.get('study_group') or '',
