@@ -106,6 +106,9 @@ export function UserDetailPage() {
 
   const isGuestOrPending = detail ? detail.user.role === 'GUEST' || detail.user.status === 'pending' : false
   const isAdminViewer = currentUser?.role === 'SUPER_ADMIN' || currentUser?.role === 'MODERATOR'
+  const targetIsStaff = detail ? detail.user.role === 'MODERATOR' || detail.user.role === 'SUPER_ADMIN' : false
+  // A moderator may view other staff read-only, but not manage them.
+  const readOnlyStaff = currentUser?.role === 'MODERATOR' && targetIsStaff
   const moderatorCourseOptions = coursesForEducationLevel(educationLevel || 'Специалитет')
   const moderatorGroupOptions = moderatorCourseOptions.flatMap((course) => groupsForEducationLevel(educationLevel || 'Специалитет', course))
 
@@ -511,7 +514,7 @@ export function UserDetailPage() {
         <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Карточка пользователя</h2>
         <div className="flex flex-wrap items-center gap-2 sm:justify-end">
           {detail.user.role === 'STUDENT' && detail.user.status === 'active' ? <Link to={`/students/${detail.user.id}`} className="inline-flex items-center text-sm text-slate-500 hover:text-indigo-600 transition-colors bg-surface border border-slate-200 px-3 py-1.5 rounded-lg">Публичный профиль</Link> : null}
-          {isAdminViewer ? <button type="button" onClick={() => setSupportModalOpen(true)} className="inline-flex items-center text-sm text-slate-500 hover:text-indigo-600 transition-colors bg-surface border border-slate-200 px-3 py-1.5 rounded-lg">Написать</button> : null}
+          {isAdminViewer && !readOnlyStaff ? <button type="button" onClick={() => setSupportModalOpen(true)} className="inline-flex items-center text-sm text-slate-500 hover:text-indigo-600 transition-colors bg-surface border border-slate-200 px-3 py-1.5 rounded-lg">Написать</button> : null}
           <button type="button" onClick={() => void handleExportPdf()} className="inline-flex items-center text-sm text-slate-500 hover:text-indigo-600 transition-colors bg-surface border border-slate-200 px-3 py-1.5 rounded-lg">{isExportingPdf ? 'PDF...' : 'PDF'}</button>
           <Link to={backUrl} className="text-sm text-slate-500 hover:text-indigo-600 flex items-center transition-colors">Назад</Link>
         </div>
@@ -612,7 +615,7 @@ export function UserDetailPage() {
           <div className="bg-surface rounded-xl border border-slate-200 overflow-hidden shadow-sm">
             <div className="px-5 py-3 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
               <h3 className="text-sm font-bold text-slate-700">Документы текущего сезона</h3>
-              {detail.user.status === 'deleted' ? (
+              {readOnlyStaff ? null : detail.user.status === 'deleted' ? (
                 <button type="button" onClick={() => void handleRestoreUser()} disabled={isRestoringUser} className="text-xs font-medium text-green-600 hover:text-green-700 transition-colors disabled:cursor-not-allowed disabled:opacity-60">
                   {isRestoringUser ? 'Восстановление...' : 'Восстановить пользователя'}
                 </button>

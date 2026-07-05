@@ -7,7 +7,7 @@ from textwrap import wrap
 import fitz
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
 from pydantic import BaseModel
-from sqlalchemy import desc, func, literal_column, or_, select
+from sqlalchemy import and_, desc, func, literal_column, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -21,7 +21,7 @@ from app.repositories.admin.user_repository import UserRepository
 from app.repositories.admin.support_repository import SupportMessageRepository, SupportTicketRepository
 from app.services.admin.resume_service import ResumeService
 from app.services.admin.support_service import SupportService
-from app.utils.access import is_in_zone
+from app.utils.access import is_in_zone, is_staff_role
 from app.utils.education import AVAILABLE_EDUCATION_LEVELS, COURSE_MAPPING, GROUP_MAPPING
 from app.utils.media_paths import resolve_static_path
 from app.utils.notifications import make_notification, serialize_notification
@@ -83,18 +83,32 @@ def _apply_moderator_user_scope(stmt, current_user):
     if current_user.role != UserRole.MODERATOR:
         return stmt
 
+    # Students the moderator manages: their education-level/course/group zone.
+    zone = []
     if current_user.education_level:
-        stmt = stmt.filter(Users.education_level == current_user.education_level)
+        zone.append(Users.education_level == current_user.education_level)
 
     courses = _split_csv(getattr(current_user, 'moderator_courses', None))
     if courses:
-        stmt = stmt.filter(Users.course.in_([int(item) for item in courses if item.isdigit()]))
+        zone.append(Users.course.in_([int(item) for item in courses if item.isdigit()]))
 
     groups = _split_csv(getattr(current_user, 'moderator_groups', None))
     if groups:
-        stmt = stmt.filter(Users.study_group.in_(groups))
+        zone.append(Users.study_group.in_(groups))
 
-    return stmt
+    zone_cond = and_(*zone) if zone else true()
+    # Plus every staff member (moderators / super admins), read-only — a
+    # moderator may see who the staff are but never edit them (write endpoints
+    # stay gated by _can_access_target, which excludes out-of-zone/staff).
+    staff_cond = Users.role.in_([UserRole.MODERATOR, UserRole.SUPER_ADMIN])
+    return stmt.filter(or_(zone_cond, staff_cond))
+
+
+def _can_view_target(current_user, target_user) -> bool:
+    """Read access: write scope plus read-only visibility of any staff member."""
+    if _can_access_target(current_user, target_user):
+        return True
+    return is_staff_role(getattr(target_user, 'role', None))
 
 
 def _can_access_target(current_user, target_user) -> bool:
@@ -408,7 +422,7 @@ async def get_user_detail(
     db: AsyncSession = Depends(get_db),
 ):
     target_user = await _get_target_user_or_404(db, user_id)
-    if not _can_access_target(current_user, target_user):
+    if not _can_view_target(current_user, target_user):
         raise HTTPException(status_code=403, detail='Access denied')
     snapshot = await _load_user_profile_snapshot(db, target_user)
     achievements = snapshot['achievements']
@@ -686,7 +700,7 @@ async def export_user_pdf(
 ):
     target_user = await _get_target_user_or_404(db, user_id)
     if current_user.id != user_id:
-        if not current_user.is_staff or not _can_access_target(current_user, target_user):
+        if not current_user.is_staff or not _can_view_target(current_user, target_user):
             raise HTTPException(status_code=403, detail='Access denied')
     snapshot = await _load_user_profile_snapshot(db, target_user)
     achievements = snapshot['achievements']
