@@ -23,8 +23,8 @@ export function AuthLayout() {
       <ThemeToggle floating />
 
       {/* Form column — holds the existing auth card via <Outlet />. */}
-      <div className="auth-form-col relative z-10 flex flex-1 flex-col items-center justify-center p-4 lg:w-[46%] lg:flex-none lg:px-10">
-        <div className="flex w-full flex-1 items-center justify-center">
+      <div className="auth-form-col relative z-10 flex flex-1 flex-col items-center justify-center gap-4 p-4 lg:w-[46%] lg:flex-none lg:px-10 lg:py-8">
+        <div className="flex w-full min-h-0 flex-1 items-center justify-center">
           <Outlet />
         </div>
         <div className="auth-form-foot hidden lg:flex">
