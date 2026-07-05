@@ -135,21 +135,23 @@ export function UserDetailPage() {
     setError(null)
 
     try {
-      const [detailResponse, resumeResponse, notesResponse] = await Promise.all([
-        usersApi.get(userId),
-        usersApi.checkResume(userId),
-        usersApi.listNotes(userId),
-      ])
+      const detailResponse = await usersApi.get(userId)
       setDetail(detailResponse.data)
       setRole(detailResponse.data.user.role)
       setEducationLevel(detailResponse.data.user.education_level ?? '')
       setModeratorCourses(detailResponse.data.user.moderator_courses ?? [])
       setModeratorGroups(detailResponse.data.user.moderator_groups ?? [])
       setGpa(detailResponse.data.user.session_gpa ?? '')
-      setResumeText(resumeResponse.data.resume ?? detailResponse.data.user.resume_text ?? '')
-      setCanGenerateResume(resumeResponse.data.can_generate)
-      setResumeReason(resumeResponse.data.reason ?? null)
-      setNotes(notesResponse.data.notes)
+      // Resume checks and staff notes are student-only: the backend returns 404
+      // for staff subjects, so load them best-effort and never fail the card.
+      const [resumeResponse, notesResponse] = await Promise.all([
+        usersApi.checkResume(userId).catch(() => null),
+        usersApi.listNotes(userId).catch(() => null),
+      ])
+      setResumeText(resumeResponse?.data.resume ?? detailResponse.data.user.resume_text ?? '')
+      setCanGenerateResume(resumeResponse?.data.can_generate ?? false)
+      setResumeReason(resumeResponse?.data.reason ?? null)
+      setNotes(notesResponse?.data.notes ?? [])
     } catch (loadError) {
       setError(getErrorMessage(loadError, 'Не удалось загрузить карточку пользователя.'))
     } finally {
@@ -677,6 +679,7 @@ export function UserDetailPage() {
 
           {detail.user.role === 'STUDENT' ? <div className="bg-surface rounded-xl border border-slate-200 p-5"><h3 className="text-sm font-semibold text-slate-700 mb-4">Динамика достижений</h3>{detail.chart_labels.length ? <div className="h-48"><canvas ref={chartRef} /></div> : <div className="text-center py-8 text-sm text-slate-400">Нет одобренных достижений для отображения графика</div>}</div> : null}
 
+          {detail.user.role === 'STUDENT' ? (
           <div className="bg-surface rounded-xl border border-slate-200 overflow-hidden shadow-sm">
             <div className="px-5 py-3 border-b border-slate-100 flex items-center gap-2">
               <svg className="w-4 h-4 text-amber-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
@@ -754,6 +757,7 @@ export function UserDetailPage() {
               )}
             </div>
           </div>
+          ) : null}
 
           {detail.user.role === 'STUDENT' && detail.achievements.length ? (() => {
             const pointsMap: Record<string, number> = {}
