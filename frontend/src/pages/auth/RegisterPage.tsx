@@ -121,10 +121,10 @@ export function RegisterPage() {
   }
 
   return (
-    <div className="theme-auth-card w-full max-w-md bg-surface rounded-2xl shadow-sm border border-slate-200 p-5 sm:p-6">
-      <div className="text-center mb-4">
-        <h1 className="text-xl font-bold text-slate-800 tracking-tight">Создать аккаунт</h1>
-        <p className="text-sm text-slate-500 mt-0.5">Присоединяйтесь к платформе</p>
+    <div className="theme-auth-card w-full max-w-md bg-surface rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8">
+      <div className="text-center mb-6">
+        <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Создать аккаунт</h1>
+        <p className="text-sm text-slate-500 mt-1">Присоединяйтесь к платформе</p>
       </div>
 
       {hasPendingVerifyFlow ? (
@@ -154,10 +154,10 @@ export function RegisterPage() {
         </div>
       ) : null}
 
-      <form onSubmit={handleSubmit} className="space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
               Имя
             </label>
             <input
@@ -166,11 +166,11 @@ export function RegisterPage() {
               required
               value={form.first_name}
               onChange={(event) => handleChange('first_name', event.target.value)}
-              className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:bg-surface focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all"
+              className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:bg-surface focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all"
             />
           </div>
           <div>
-            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
               Фамилия
             </label>
             <input
@@ -179,13 +179,13 @@ export function RegisterPage() {
               required
               value={form.last_name}
               onChange={(event) => handleChange('last_name', event.target.value)}
-              className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:bg-surface focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all"
+              className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:bg-surface focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all"
             />
           </div>
         </div>
 
         <div>
-          <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+          <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
             Email
           </label>
           <input
@@ -194,13 +194,13 @@ export function RegisterPage() {
             required
             value={form.email}
             onChange={(event) => handleChange('email', event.target.value)}
-            className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:bg-surface focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all"
+            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:bg-surface focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all"
           />
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
-            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
               Обучение
             </label>
             <select
@@ -208,7 +208,7 @@ export function RegisterPage() {
               value={form.education_level}
               onChange={(event) => handleEducationChange(event.target.value)}
               required
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:bg-surface focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all"
+              className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:bg-surface focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all"
             >
               <option value="" disabled>
                 Выберите...
@@ -221,7 +221,7 @@ export function RegisterPage() {
             </select>
           </div>
           <div>
-            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
               Курс
             </label>
             <select
@@ -230,7 +230,7 @@ export function RegisterPage() {
               onChange={(event) => handleCourseChange(event.target.value)}
               disabled={!form.education_level}
               required
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:bg-surface focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:bg-surface focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <option value="" disabled>
                 Курс...
@@ -243,7 +243,7 @@ export function RegisterPage() {
             </select>
           </div>
           <div>
-            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
               Группа
             </label>
             <select
@@ -252,7 +252,7 @@ export function RegisterPage() {
               onChange={(event) => handleChange('group', event.target.value)}
               disabled={!form.education_level || !form.course}
               required
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:bg-surface focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:bg-surface focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <option value="" disabled>
                 Группа...
@@ -267,7 +267,7 @@ export function RegisterPage() {
         </div>
 
         <div>
-          <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+          <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
             Пароль
           </label>
           <div className="relative mb-2">
@@ -278,7 +278,7 @@ export function RegisterPage() {
               value={form.password}
               onChange={(event) => handleChange('password', event.target.value)}
               required
-              className="w-full px-4 py-2 pr-10 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:bg-surface focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all"
+              className="w-full px-4 py-2.5 pr-10 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:bg-surface focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all"
             />
             <button
               type="button"
@@ -316,7 +316,7 @@ export function RegisterPage() {
             </button>
           </div>
 
-          <div className="h-1.5 w-full bg-slate-100 rounded-full mb-2 overflow-hidden">
+          <div className="h-1.5 w-full bg-slate-100 rounded-full mb-3 overflow-hidden">
             <div
               className={`h-full transition-all duration-300 ease-out ${strengthColor}`}
               style={{ width: `${strengthPercent}%` }}
@@ -368,7 +368,7 @@ export function RegisterPage() {
         </div>
 
         <div>
-          <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+          <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
             Подтвердите пароль
           </label>
           <div className="relative">
@@ -379,7 +379,7 @@ export function RegisterPage() {
               value={form.password_confirm}
               onChange={(event) => handleChange('password_confirm', event.target.value)}
               required
-              className="w-full px-4 py-2 pr-10 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:bg-surface focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all"
+              className="w-full px-4 py-2.5 pr-10 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:bg-surface focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all"
             />
             <button
               type="button"
@@ -421,7 +421,7 @@ export function RegisterPage() {
         <button
           type="submit"
           disabled={isSubmitting || strengthScore < 4}
-          className={`mt-3 w-full rounded-lg py-2 text-sm font-medium shadow-sm transition-colors ${
+          className={`mt-4 w-full rounded-lg py-2.5 text-sm font-medium shadow-sm transition-colors ${
             isSubmitting || strengthScore < 4
               ? 'cursor-not-allowed bg-slate-300 text-slate-500'
               : 'bg-indigo-600 text-white hover:bg-indigo-700'
@@ -431,14 +431,14 @@ export function RegisterPage() {
         </button>
       </form>
 
-      <p className="mt-3 text-center text-[11px] text-slate-400">
+      <p className="mt-4 text-center text-[11px] text-slate-400">
         Нажимая «Зарегистрироваться», вы соглашаетесь с{' '}
         <Link to="/privacy" className="text-indigo-600 hover:underline">
           Политикой конфиденциальности
         </Link>
       </p>
 
-      <div className="mt-3 text-center text-sm text-slate-500">
+      <div className="mt-4 text-center text-sm text-slate-500">
         Уже есть аккаунт?{' '}
         <Link to="/login" className="text-indigo-600 font-medium hover:underline">
           Войти
