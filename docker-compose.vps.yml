@@ -35,7 +35,9 @@ services:
       - prod_net
 
   nginx:
-    image: nginx:alpine
+    # Brotli-enabled nginx (ngx_brotli compiled in) so the `brotli` directives
+    # in nginx/conf.d/default.conf work; gzip stays as the fallback.
+    image: fholzer/nginx-brotli:v1.26.2
     container_name: sirius_nginx
     restart: always
     ports:
