@@ -19,7 +19,7 @@ from app.models.user import Users
 from app.utils.points import aggregated_gpa_bonus_expr
 from app.utils.education import AVAILABLE_EDUCATION_LEVELS, COURSE_MAPPING, GROUP_MAPPING
 
-from app.utils.cache import cache_get_json, cache_set_json
+from app.utils.cache import cache_get_json, cache_set_json, invalidate_scoreboard_caches
 
 from .serializers import serialize_user, serialize_user_public
 
@@ -325,6 +325,7 @@ async def end_season(
         .values(session_gpa=None)
     )
     await db.commit()
+    await invalidate_scoreboard_caches()
 
     return {'success': True}
 

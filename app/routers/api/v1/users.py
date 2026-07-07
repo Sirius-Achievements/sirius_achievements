@@ -22,6 +22,7 @@ from app.repositories.admin.support_repository import SupportMessageRepository, 
 from app.services.admin.resume_service import ResumeService
 from app.services.admin.support_service import SupportService
 from app.utils.access import is_in_zone, is_staff_role
+from app.utils.cache import invalidate_scoreboard_caches
 from app.utils.education import AVAILABLE_EDUCATION_LEVELS, COURSE_MAPPING, GROUP_MAPPING
 from app.utils.media_paths import resolve_static_path
 from app.utils.notifications import make_notification, serialize_notification
@@ -528,6 +529,7 @@ async def delete_user(
     target_user.api_access_version = int(target_user.api_access_version or 0) + 1
     target_user.api_refresh_version = int(target_user.api_refresh_version or 0) + 1
     await db.commit()
+    await invalidate_scoreboard_caches()
     await db.refresh(target_user)
     return {'success': True, 'user': serialize_user(target_user)}
 
@@ -558,6 +560,7 @@ async def restore_user(
     target_user.api_access_version = int(target_user.api_access_version or 0) + 1
     target_user.api_refresh_version = int(target_user.api_refresh_version or 0) + 1
     await db.commit()
+    await invalidate_scoreboard_caches()
     await db.refresh(target_user)
     return {'success': True, 'user': serialize_user(target_user)}
 
@@ -637,6 +640,7 @@ async def set_gpa(
 
     target_user.session_gpa = f'{gpa_value:.1f}'
     await db.commit()
+    await invalidate_scoreboard_caches()
     await db.refresh(target_user)
 
     return {

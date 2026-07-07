@@ -25,3 +25,21 @@ async def cache_set_json(key: str, value: Any, ttl: int) -> None:
         await get_redis().set(key, json.dumps(value, ensure_ascii=False), ex=ttl)
     except Exception:
         pass
+
+
+async def invalidate_prefix(*prefixes: str) -> None:
+    """Delete every cached key under the given prefixes (non-blocking SCAN)."""
+    try:
+        redis = get_redis()
+        for prefix in prefixes:
+            keys = [key async for key in redis.scan_iter(match=f'{prefix}*', count=200)]
+            if keys:
+                await redis.delete(*keys)
+    except Exception:
+        pass
+
+
+async def invalidate_scoreboard_caches() -> None:
+    """Drop leaderboard + staff-dashboard caches after a scoring change so the
+    numbers are correct immediately instead of waiting out the TTL."""
+    await invalidate_prefix('lb:', 'dash:')

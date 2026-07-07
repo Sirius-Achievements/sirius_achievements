@@ -20,6 +20,7 @@ from app.services.audit_service import log_action
 from app.services.points_calculator import calculate_points
 from app.services.ws_manager import ws_manager
 from app.utils.access import is_in_zone
+from app.utils.cache import invalidate_scoreboard_caches
 from app.utils.notifications import make_notification, serialize_notification
 from app.utils.search import escape_like
 
@@ -116,6 +117,7 @@ async def approve_user(
     target_user.reviewed_by_id = None
     await log_action(db, current_user.id, 'user.approve', 'user', user_id)
     await db.commit()
+    await invalidate_scoreboard_caches()
     await db.refresh(target_user)
     return {'success': True, 'user': serialize_user(target_user)}
 
@@ -134,6 +136,7 @@ async def reject_user(
     target_user.reviewed_by_id = None
     await log_action(db, current_user.id, 'user.reject', 'user', user_id)
     await db.commit()
+    await invalidate_scoreboard_caches()
     await db.refresh(target_user)
     return {'success': True, 'user': serialize_user(target_user)}
 
@@ -466,6 +469,7 @@ async def update_achievement_status(
     db.add(notification)
     await log_action(db, current_user.id, f'achievement.{payload.status}', 'achievement', achievement_id, payload.rejection_reason)
     await db.commit()
+    await invalidate_scoreboard_caches()
 
     await ws_manager.send_to_user(
         achievement.user_id,
@@ -535,6 +539,7 @@ async def batch_update_achievements(
         processed += 1
 
     await db.commit()
+    await invalidate_scoreboard_caches()
 
     for user_id, notification in notifications_to_send:
         await ws_manager.send_to_user(
