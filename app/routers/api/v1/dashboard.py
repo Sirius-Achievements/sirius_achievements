@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import os
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query
@@ -15,9 +16,22 @@ from app.models.notification import Notification
 from app.models.support_message import SupportMessage
 from app.models.support_ticket import SupportTicket
 from app.models.user import Users
+from app.utils.cache import cache_get_json, cache_set_json
 from app.utils.points import aggregated_gpa_bonus_expr, calculate_gpa_bonus
 
 from .serializers import serialize_achievement
+
+# The staff dashboard is a scope-aggregate (no per-user fields), so all staff in
+# the same zone + period share one cached result. Short TTL; fail-open.
+DASHBOARD_CACHE_TTL = int(os.getenv('DASHBOARD_CACHE_TTL', 30))
+
+
+def _staff_dashboard_cache_key(user: Users, period: str, date_from: str | None, date_to: str | None) -> str:
+    if user.role == UserRole.MODERATOR and user.education_level:
+        zone = f'mod:{user.education_level_value}:{user.moderator_courses or ""}:{user.moderator_groups or ""}'
+    else:
+        zone = 'all'
+    return f'dash:{zone}|p={period}|from={date_from or ""}|to={date_to or ""}'
 
 router = APIRouter(prefix='/api/v1/dashboard', tags=['api.v1.dashboard'])
 
@@ -210,6 +224,11 @@ async def dashboard(
     include_gpa_bonus = period == 'all'
 
     if user.is_staff:
+        _dash_key = _staff_dashboard_cache_key(user, period, date_from, date_to)
+        _cached = await cache_get_json(_dash_key)
+        if _cached is not None:
+            return _cached
+
         new_users_stmt = _apply_staff_user_scope(
             select(func.count())
             .select_from(Users)
@@ -369,7 +388,7 @@ async def dashboard(
             if category.value not in active_categories
         ][:3]
 
-        return {
+        _dash_payload = {
             'date_from': start_date.date().isoformat(),
             'date_to': (end_date - timedelta(days=1)).date().isoformat(),
             'new_users_count': int(new_users_count),
@@ -452,6 +471,8 @@ async def dashboard(
             ],
             'recommendations': recommendations,
         }
+        await cache_set_json(_dash_key, _dash_payload, DASHBOARD_CACHE_TTL)
+        return _dash_payload
 
     achievement_points = (await db.execute(
         select(func.coalesce(func.sum(Achievement.points), 0)).filter(

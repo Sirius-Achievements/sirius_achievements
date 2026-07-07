@@ -2,6 +2,7 @@
 
 import csv
 import io
+import os
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, status
@@ -18,9 +19,18 @@ from app.models.user import Users
 from app.utils.points import aggregated_gpa_bonus_expr
 from app.utils.education import AVAILABLE_EDUCATION_LEVELS, COURSE_MAPPING, GROUP_MAPPING
 
+from app.utils.cache import cache_get_json, cache_set_json
+
 from .serializers import serialize_user, serialize_user_public
 
 router = APIRouter(prefix='/api/v1/leaderboard', tags=['api.v1.leaderboard'])
+
+# The ranked aggregation (GROUP BY over achievements) is identical for everyone
+# in the same scope+filters, so cache it briefly in Redis. Per-viewer bits
+# (is_me / my_rank / own full profile) are layered on top per request. A short
+# TTL keeps it fresh enough for a leaderboard while collapsing the repeated
+# aggregate under concurrent load. Fail-open: any Redis error falls back to DB.
+LEADERBOARD_CACHE_TTL = int(os.getenv('LEADERBOARD_CACHE_TTL', 30))
 
 
 def _scoped_education_level(user: Users, requested_level: str | None):
@@ -77,8 +87,19 @@ def _build_query_params(education_level: str | None, course: int | None, categor
     return params
 
 
-async def _build_leaderboard_payload(user: Users, db: AsyncSession, education_level: str | None, course: int | None, categories: list[str] | None, group: str | None, category_logic: str = 'or', full_users: bool = False):
-    categories = [c for c in (categories or []) if c and c != 'all']
+def _scope_signature(user: Users, education_level: str | None, course: int | None, categories: list[str], group: str | None, category_logic: str) -> str:
+    """Key the cached ranked list by everything that changes the query rows."""
+    cats = ','.join(sorted(categories)) if categories else ''
+    logic = category_logic if (categories and len(categories) > 1) else 'or'
+    if user.role == UserRole.MODERATOR and user.education_level:
+        zone = f'mod:{user.education_level_value}:{user.moderator_courses or ""}:{user.moderator_groups or ""}'
+    else:
+        zone = f'lvl:{education_level or "all"}'
+    return f'lb:{zone}|c={course or 0}|g={group or "all"}|cat={cats}|logic={logic}'
+
+
+async def _compute_ranked_base(user: Users, db: AsyncSession, education_level: str | None, course: int | None, categories: list[str], group: str | None, category_logic: str, full_users: bool = False) -> list[dict]:
+    """Run the ranked aggregation and serialize rows (public, or full for export)."""
     achievement_filter = Achievement.status == AchievementStatus.APPROVED
     if categories:
         achievement_filter = achievement_filter & (Achievement.category.in_(categories))
@@ -110,21 +131,55 @@ async def _build_leaderboard_payload(user: Users, db: AsyncSession, education_le
     result = await db.execute(stmt)
     rows = result.all()
 
+    base = []
+    for index, (student, points, achievements_count) in enumerate(rows, 1):
+        view = serialize_user(student) if full_users else serialize_user_public(student)
+        base.append({
+            'rank': index,
+            'user': view,
+            'total_points': int(points or 0),
+            'achievements_count': int(achievements_count or 0),
+        })
+    return base
+
+
+async def _cached_ranked_base(user: Users, db: AsyncSession, education_level: str | None, course: int | None, categories: list[str], group: str | None, category_logic: str) -> list[dict]:
+    key = _scope_signature(user, education_level, course, categories, group, category_logic)
+    cached = await cache_get_json(key)
+    if cached is not None:
+        return cached
+    base = await _compute_ranked_base(user, db, education_level, course, categories, group, category_logic)
+    await cache_set_json(key, base, LEADERBOARD_CACHE_TTL)
+    return base
+
+
+async def _build_leaderboard_payload(user: Users, db: AsyncSession, education_level: str | None, course: int | None, categories: list[str] | None, group: str | None, category_logic: str = 'or', full_users: bool = False):
+    categories = [c for c in (categories or []) if c and c != 'all']
+
+    # Staff export serializes every row fully and is rare — skip the cache.
+    if full_users:
+        base = await _compute_ranked_base(user, db, education_level, course, categories, group, category_logic, full_users=True)
+    else:
+        base = await _cached_ranked_base(user, db, education_level, course, categories, group, category_logic)
+
     my_rank = 0
     my_points = 0
     leaderboard = []
-    for index, (student, points, achievements_count) in enumerate(rows, 1):
-        if student.id == user.id:
-            my_rank = index
-            my_points = int(points or 0)
-        peer_view = serialize_user(student) if (full_users or student.id == user.id) else serialize_user_public(student)
+    for row in base:
+        is_me = row['user'].get('id') == user.id
+        if is_me:
+            my_rank = row['rank']
+            my_points = row['total_points']
+        # The cached base serializes peers as public; swap the viewer's own row
+        # for the full serialization so they still see their private fields.
+        peer_view = serialize_user(user) if (is_me and not full_users) else row['user']
         leaderboard.append(
             {
-                'rank': index,
+                'rank': row['rank'],
                 'user': peer_view,
-                'total_points': int(points or 0),
-                'achievements_count': int(achievements_count or 0),
-                'is_me': student.id == user.id,
+                'total_points': row['total_points'],
+                'achievements_count': row['achievements_count'],
+                'is_me': is_me,
             }
         )
 
