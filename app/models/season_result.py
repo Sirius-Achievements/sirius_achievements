@@ -7,7 +7,7 @@ class SeasonResult(Base):
     __tablename__ = "season_results"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     season_name = Column(String(100), nullable=False)
     points = Column(Integer, default=0)
     rank = Column(Integer, default=0)

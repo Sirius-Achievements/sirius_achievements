@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum, Text, ForeignKey
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum, Text, ForeignKey, Index
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.infrastructure.database import Base
@@ -6,6 +6,12 @@ from app.models.enums import UserRole, UserStatus, EducationLevel
 
 class Users(Base):
     __tablename__ = "users"
+    __table_args__ = (
+        Index("ix_users_role", "role"),
+        Index("ix_users_status", "status"),
+        Index("ix_users_zone", "education_level", "course", "study_group"),
+        Index("ix_users_created_at", "created_at"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     first_name = Column(String, nullable=False)

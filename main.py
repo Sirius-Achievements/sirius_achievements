@@ -93,6 +93,23 @@ async def _apply_schema_updates():
         "UPDATE users SET study_group = 'ИОП-ИТ-25/2' WHERE study_group = 'С-102'",
         "UPDATE users SET study_group = 'ИОП-ИТ-24/1' WHERE study_group = 'С-201'",
         "UPDATE users SET study_group = 'ИОП-ИТ-24/2' WHERE study_group = 'С-202'",
+        # --- Performance indexes (idempotent). FKs are NOT auto-indexed by
+        # Postgres, so per-user lookups, the leaderboard aggregation and the
+        # scoped user list did sequential scans. ---
+        "CREATE INDEX IF NOT EXISTS ix_achievements_user_status ON achievements (user_id, status)",
+        "CREATE INDEX IF NOT EXISTS ix_achievements_status ON achievements (status)",
+        "CREATE INDEX IF NOT EXISTS ix_achievements_category ON achievements (category)",
+        "CREATE INDEX IF NOT EXISTS ix_achievements_created_at ON achievements (created_at)",
+        "CREATE INDEX IF NOT EXISTS ix_achievements_moderator_id ON achievements (moderator_id)",
+        "CREATE INDEX IF NOT EXISTS ix_users_role ON users (role)",
+        "CREATE INDEX IF NOT EXISTS ix_users_status ON users (status)",
+        "CREATE INDEX IF NOT EXISTS ix_users_zone ON users (education_level, course, study_group)",
+        "CREATE INDEX IF NOT EXISTS ix_users_created_at ON users (created_at)",
+        "CREATE INDEX IF NOT EXISTS ix_notifications_user_id ON notifications (user_id)",
+        "CREATE INDEX IF NOT EXISTS ix_season_results_user_id ON season_results (user_id)",
+        "CREATE INDEX IF NOT EXISTS ix_user_notes_user_id ON user_notes (user_id)",
+        "CREATE INDEX IF NOT EXISTS ix_support_tickets_user_status ON support_tickets (user_id, status)",
+        "CREATE INDEX IF NOT EXISTS ix_support_messages_ticket_id ON support_messages (ticket_id)",
     ]
 
     # ── Add missing enum values (PostgreSQL 12+ supports ADD VALUE in transactions) ──

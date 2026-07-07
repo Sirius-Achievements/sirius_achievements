@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Enum, Text
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Enum, Text, Index
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 
@@ -8,6 +8,13 @@ from app.models.enums import AchievementStatus, AchievementCategory, Achievement
 
 class Achievement(Base):
     __tablename__ = "achievements"
+    __table_args__ = (
+        Index("ix_achievements_user_status", "user_id", "status"),
+        Index("ix_achievements_status", "status"),
+        Index("ix_achievements_category", "category"),
+        Index("ix_achievements_created_at", "created_at"),
+        Index("ix_achievements_moderator_id", "moderator_id"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
