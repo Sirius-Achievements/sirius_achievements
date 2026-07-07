@@ -1,4 +1,4 @@
-﻿import { useEffect } from 'react'
+﻿import { lazy, Suspense, useEffect } from 'react'
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { AuthLayout } from '@/components/layout/AuthLayout'
@@ -11,32 +11,36 @@ import { ToastProvider } from '@/contexts/ToastContext'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
 import { onServerError } from '@/utils/serverErrorBus'
-import { LoginPage } from '@/pages/auth/LoginPage'
-import { RegisterPage } from '@/pages/auth/RegisterPage'
-import { ForgotPasswordPage } from '@/pages/auth/ForgotPasswordPage'
-import { ResetPasswordPage } from '@/pages/auth/ResetPasswordPage'
-import { VerifyCodePage } from '@/pages/auth/VerifyCodePage'
-import { VerifyEmailPage } from '@/pages/auth/VerifyEmailPage'
-import { PrivacyPage } from '@/pages/auth/PrivacyPage'
-import { AchievementsPage } from '@/pages/achievements/AchievementsPage'
-import { DashboardPage } from '@/pages/dashboard/DashboardPage'
-import { DocumentsPage } from '@/pages/documents/DocumentsPage'
-import { ForbiddenPage } from '@/pages/errors/ForbiddenPage'
-import { NotFoundPage } from '@/pages/errors/NotFoundPage'
-import { ServerErrorPage } from '@/pages/errors/ServerErrorPage'
-import { LeaderboardPage } from '@/pages/leaderboard/LeaderboardPage'
-import { ModerationAchievementsPage } from '@/pages/moderation/ModerationAchievementsPage'
-import { ModerationSupportChatPage } from '@/pages/moderation/ModerationSupportChatPage'
-import { ModerationSupportPage } from '@/pages/moderation/ModerationSupportPage'
-import { ModerationUsersPage } from '@/pages/moderation/ModerationUsersPage'
-import { MyWorkPage } from '@/pages/my-work/MyWorkPage'
-import { ProfilePage } from '@/pages/profile/ProfilePage'
-import { StudentProfilePage } from '@/pages/public/StudentProfilePage'
-import { SupportChatPage } from '@/pages/support/SupportChatPage'
-import { SupportPage } from '@/pages/support/SupportPage'
-import { UserDetailPage } from '@/pages/users/UserDetailPage'
-import { UsersPage } from '@/pages/users/UsersPage'
 import { APP_PREFIX } from '@/utils/constants'
+
+// Route-level code splitting: each page ships as its own chunk, so heavy
+// libraries (chart.js, pdf.js) load only when their page is opened. Pages use
+// named exports, hence the `.then(m => ({ default: ... }))` shim for lazy().
+const LoginPage = lazy(() => import('@/pages/auth/LoginPage').then((m) => ({ default: m.LoginPage })))
+const RegisterPage = lazy(() => import('@/pages/auth/RegisterPage').then((m) => ({ default: m.RegisterPage })))
+const ForgotPasswordPage = lazy(() => import('@/pages/auth/ForgotPasswordPage').then((m) => ({ default: m.ForgotPasswordPage })))
+const ResetPasswordPage = lazy(() => import('@/pages/auth/ResetPasswordPage').then((m) => ({ default: m.ResetPasswordPage })))
+const VerifyCodePage = lazy(() => import('@/pages/auth/VerifyCodePage').then((m) => ({ default: m.VerifyCodePage })))
+const VerifyEmailPage = lazy(() => import('@/pages/auth/VerifyEmailPage').then((m) => ({ default: m.VerifyEmailPage })))
+const PrivacyPage = lazy(() => import('@/pages/auth/PrivacyPage').then((m) => ({ default: m.PrivacyPage })))
+const AchievementsPage = lazy(() => import('@/pages/achievements/AchievementsPage').then((m) => ({ default: m.AchievementsPage })))
+const DashboardPage = lazy(() => import('@/pages/dashboard/DashboardPage').then((m) => ({ default: m.DashboardPage })))
+const DocumentsPage = lazy(() => import('@/pages/documents/DocumentsPage').then((m) => ({ default: m.DocumentsPage })))
+const ForbiddenPage = lazy(() => import('@/pages/errors/ForbiddenPage').then((m) => ({ default: m.ForbiddenPage })))
+const NotFoundPage = lazy(() => import('@/pages/errors/NotFoundPage').then((m) => ({ default: m.NotFoundPage })))
+const ServerErrorPage = lazy(() => import('@/pages/errors/ServerErrorPage').then((m) => ({ default: m.ServerErrorPage })))
+const LeaderboardPage = lazy(() => import('@/pages/leaderboard/LeaderboardPage').then((m) => ({ default: m.LeaderboardPage })))
+const ModerationAchievementsPage = lazy(() => import('@/pages/moderation/ModerationAchievementsPage').then((m) => ({ default: m.ModerationAchievementsPage })))
+const ModerationSupportChatPage = lazy(() => import('@/pages/moderation/ModerationSupportChatPage').then((m) => ({ default: m.ModerationSupportChatPage })))
+const ModerationSupportPage = lazy(() => import('@/pages/moderation/ModerationSupportPage').then((m) => ({ default: m.ModerationSupportPage })))
+const ModerationUsersPage = lazy(() => import('@/pages/moderation/ModerationUsersPage').then((m) => ({ default: m.ModerationUsersPage })))
+const MyWorkPage = lazy(() => import('@/pages/my-work/MyWorkPage').then((m) => ({ default: m.MyWorkPage })))
+const ProfilePage = lazy(() => import('@/pages/profile/ProfilePage').then((m) => ({ default: m.ProfilePage })))
+const StudentProfilePage = lazy(() => import('@/pages/public/StudentProfilePage').then((m) => ({ default: m.StudentProfilePage })))
+const SupportChatPage = lazy(() => import('@/pages/support/SupportChatPage').then((m) => ({ default: m.SupportChatPage })))
+const SupportPage = lazy(() => import('@/pages/support/SupportPage').then((m) => ({ default: m.SupportPage })))
+const UserDetailPage = lazy(() => import('@/pages/users/UserDetailPage').then((m) => ({ default: m.UserDetailPage })))
+const UsersPage = lazy(() => import('@/pages/users/UsersPage').then((m) => ({ default: m.UsersPage })))
 
 function ServerErrorToastBridge() {
   const { pushToast } = useToast()
@@ -93,6 +97,7 @@ function RequireUsableAccount() {
 
 function AppRoutes() {
   return (
+    <Suspense fallback={<LoadingSpinner fullscreen />}>
     <Routes>
       <Route element={<AuthLayout />}>
         <Route path="/login" element={<LoginPage />} />
@@ -136,6 +141,7 @@ function AppRoutes() {
       <Route path="/500" element={<ServerErrorPage />} />
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
+    </Suspense>
   )
 }
 
