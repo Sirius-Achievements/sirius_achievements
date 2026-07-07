@@ -557,23 +557,45 @@ export function UserDetailPage() {
                     <div>
                       <div className="text-[10px] text-indigo-800 font-bold uppercase tracking-wider mb-1.5">Курсы</div>
                       <div className="flex flex-wrap gap-2">
-                        {moderatorCourseOptions.map((course) => (
-                          <label key={course} className="inline-flex items-center gap-1.5 rounded border border-indigo-200 bg-surface px-2.5 py-1.5 text-xs text-slate-700">
-                            <input type="checkbox" checked={moderatorCourses.includes(course)} onChange={() => toggleModeratorCourse(course)} />
-                            {courseLabel(course)}
-                          </label>
-                        ))}
+                        {moderatorCourseOptions.map((course) => {
+                          const active = moderatorCourses.includes(course)
+                          return (
+                            <button
+                              key={course}
+                              type="button"
+                              aria-pressed={active}
+                              onClick={() => toggleModeratorCourse(course)}
+                              className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors ${active ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-indigo-200 bg-surface text-slate-700 hover:border-indigo-400'}`}
+                            >
+                              {active ? (
+                                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" /></svg>
+                              ) : null}
+                              {courseLabel(course)}
+                            </button>
+                          )
+                        })}
                       </div>
                     </div>
                     <div>
                       <div className="text-[10px] text-indigo-800 font-bold uppercase tracking-wider mb-1.5">Группы</div>
                       <div className="flex flex-wrap gap-2">
-                        {moderatorGroupOptions.map((group) => (
-                          <label key={group} className="inline-flex items-center gap-1.5 rounded border border-indigo-200 bg-surface px-2.5 py-1.5 text-xs text-slate-700">
-                            <input type="checkbox" checked={moderatorGroups.includes(group)} onChange={() => toggleModeratorGroup(group)} />
-                            {group}
-                          </label>
-                        ))}
+                        {moderatorGroupOptions.map((group) => {
+                          const active = moderatorGroups.includes(group)
+                          return (
+                            <button
+                              key={group}
+                              type="button"
+                              aria-pressed={active}
+                              onClick={() => toggleModeratorGroup(group)}
+                              className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors ${active ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-indigo-200 bg-surface text-slate-700 hover:border-indigo-400'}`}
+                            >
+                              {active ? (
+                                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" /></svg>
+                              ) : null}
+                              {group}
+                            </button>
+                          )
+                        })}
                       </div>
                       <p className="mt-1.5 text-[10px] text-indigo-700/70">Если курс или группа не выбраны, модератор видит все значения внутри выбранной зоны.</p>
                     </div>
