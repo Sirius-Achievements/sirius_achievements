@@ -183,15 +183,11 @@ class ResumeService:
 
             docs_data.append(doc_info)
 
-        # Пробуем YandexGPT, если настроен
+        # Пробуем локальную LLM (Qwen через vLLM), если настроена
         resume_result = None
-        api_key = settings.YANDEX_API_KEY or ""
-        folder_id = settings.YANDEX_FOLDER_ID or ""
-        is_placeholder = not api_key or api_key.startswith("ваш") or not folder_id or folder_id.startswith("ваш")
-
-        if settings.RESUME_EXTERNAL_AI_ENABLED and not is_placeholder:
+        if settings.RESUME_LOCAL_AI_ENABLED:
             combined_text = self._build_combined_text(student_name, docs_data)
-            resume_result = await self._call_yandex_gpt(combined_text, student_name)
+            resume_result = await self._call_local_llm(combined_text, student_name)
 
         # Если AI не сработал или не настроен — локальная генерация
         if not resume_result:
@@ -218,22 +214,17 @@ class ResumeService:
             combined += "\n"
         return combined
 
-    async def _call_yandex_gpt(self, combined_text: str, target_name: str) -> str | None:
-        """Вызывает YandexGPT API. Возвращает None при ошибке."""
-        api_key = settings.YANDEX_API_KEY
-        folder_id = settings.YANDEX_FOLDER_ID
-
-        prompt = {
-            "modelUri": f"gpt://{folder_id}/yandexgpt",
-            "completionOptions": {
-                "stream": False,
-                "temperature": 0.1,
-                "maxTokens": "1000"
-            },
+    async def _call_local_llm(self, combined_text: str, target_name: str) -> str | None:
+        """Вызывает локальную LLM (Qwen2.5-7B-Instruct-AWQ через vLLM,
+        OpenAI-совместимый /chat/completions). Возвращает None при ошибке."""
+        payload = {
+            "model": settings.LOCAL_LLM_MODEL,
+            "temperature": 0.1,
+            "max_tokens": 1000,
             "messages": [
                 {
                     "role": "system",
-                    "text": (
+                    "content": (
                         f"Ты — строгий HR-специалист. "
                         f"Составь краткое профессиональное резюме для {target_name}. "
                         f"Игнорируй имена других людей в тексте документов. "
@@ -244,26 +235,28 @@ class ResumeService:
                 },
                 {
                     "role": "user",
-                    "text": f"Данные из документов:\n{combined_text}"
+                    "content": f"Данные из документов:\n{combined_text}"
                 }
             ]
         }
 
-        url = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
-        headers = {"Content-Type": "application/json", "Authorization": f"Api-Key {api_key}"}
+        url = f"{settings.LOCAL_LLM_BASE_URL.rstrip('/')}/chat/completions"
+        headers = {"Content-Type": "application/json"}
+        if settings.LOCAL_LLM_API_KEY:
+            headers["Authorization"] = f"Bearer {settings.LOCAL_LLM_API_KEY}"
 
         async with httpx.AsyncClient() as client:
             try:
-                response = await client.post(url, headers=headers, json=prompt, timeout=30.0)
+                response = await client.post(url, headers=headers, json=payload, timeout=settings.LOCAL_LLM_TIMEOUT)
                 response.raise_for_status()
-                result = response.json()['result']['alternatives'][0]['message']['text']
-                log.info("YandexGPT resume generated for %s", target_name)
+                result = response.json()['choices'][0]['message']['content']
+                log.info("Local LLM (%s) resume generated for %s", settings.LOCAL_LLM_MODEL, target_name)
                 return result
             except httpx.HTTPStatusError as e:
-                log.error("YandexGPT API HTTP %s: %s", e.response.status_code, e.response.text[:200])
+                log.error("Local LLM API HTTP %s: %s", e.response.status_code, e.response.text[:200])
                 return None
             except Exception as e:
-                log.error("YandexGPT API error: %s", e)
+                log.error("Local LLM API error: %s", e)
                 return None
 
     def _generate_local_resume(self, student_name: str, user, docs_data: list) -> str:

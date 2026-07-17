@@ -89,10 +89,12 @@ class Settings:
     )
     MAIL_DEV_LOG_CODES: bool = _env_bool("MAIL_DEV_LOG_CODES", False)
 
-    # ── Yandex GPT ──
-    YANDEX_API_KEY: str = os.getenv("YANDEX_API_KEY", "")
-    YANDEX_FOLDER_ID: str = os.getenv("YANDEX_FOLDER_ID", "")
-    RESUME_EXTERNAL_AI_ENABLED: bool = _env_bool("RESUME_EXTERNAL_AI_ENABLED", False)
+    # ── Локальная LLM (Qwen2.5-7B-Instruct-AWQ через vLLM) ──
+    LOCAL_LLM_BASE_URL: str = os.getenv("LOCAL_LLM_BASE_URL", "http://vllm:8000/v1")
+    LOCAL_LLM_MODEL: str = os.getenv("LOCAL_LLM_MODEL", "Qwen/Qwen2.5-7B-Instruct-AWQ")
+    LOCAL_LLM_API_KEY: str = os.getenv("LOCAL_LLM_API_KEY", "")
+    LOCAL_LLM_TIMEOUT: int = int(os.getenv("LOCAL_LLM_TIMEOUT", "60"))
+    RESUME_LOCAL_AI_ENABLED: bool = _env_bool("RESUME_LOCAL_AI_ENABLED", False)
     RESUME_OCR_MODEL_DOWNLOAD_ENABLED: bool = _env_bool("RESUME_OCR_MODEL_DOWNLOAD_ENABLED", False)
 
 

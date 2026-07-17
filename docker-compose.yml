@@ -48,6 +48,7 @@ services:
       - DB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD is required}
       - DB_NAME=${DB_NAME:?DB_NAME is required}
       - REDIS_URL=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379
+      - LOCAL_LLM_BASE_URL=http://vllm:8000/v1
       - TZ=Europe/Moscow
     volumes:
       - uploads_data:/app/static/uploads
@@ -59,6 +60,41 @@ services:
       retries: 3
       start_period: 15s
 
+  # Локальный сервер инференса для AI-сводки (Qwen2.5-7B-Instruct-AWQ).
+  # Требует NVIDIA GPU + установленный nvidia-container-toolkit на хосте.
+  # Не запускается при обычном "docker compose up" — только с флагом
+  # --profile ai (см. RESUME_LOCAL_AI_ENABLED в .env).
+  # Для локальной разработки на слабом GPU переопределите модель через
+  # docker-compose.override.yml (не коммитится в git).
+  vllm:
+    image: vllm/vllm-openai:latest
+    container_name: sirius_vllm_new
+    restart: always
+    profiles: ["ai"]
+    command:
+      - "--model=Qwen/Qwen2.5-0.5B-Instruct-AWQ"
+      - "--quantization=awq"
+      - "--max-model-len=8192"
+      - "--gpu-memory-utilization=0.90"
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - vllm_hf_cache:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 300s
+
 volumes:
   postgres_data_new:
   uploads_data:
+  vllm_hf_cache:
