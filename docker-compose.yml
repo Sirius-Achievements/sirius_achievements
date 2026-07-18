@@ -60,19 +60,20 @@ services:
       retries: 3
       start_period: 15s
 
-  # Локальный сервер инференса для AI-сводки (Qwen2.5-7B-Instruct-AWQ).
+  # Локальный сервер инференса для AI-сводки (Qwen2.5-3B-Instruct-AWQ).
   # Требует NVIDIA GPU + установленный nvidia-container-toolkit на хосте.
   # Не запускается при обычном "docker compose up" — только с флагом
   # --profile ai (см. RESUME_LOCAL_AI_ENABLED в .env).
   # Для локальной разработки на слабом GPU переопределите модель через
   # docker-compose.override.yml (не коммитится в git).
+  
   vllm:
     image: vllm/vllm-openai:latest
     container_name: sirius_vllm_new
     restart: always
     profiles: ["ai"]
     command:
-      - "--model=Qwen/Qwen2.5-0.5B-Instruct-AWQ"
+      - "--model=Qwen/Qwen2.5-3B-Instruct-AWQ"
       - "--quantization=awq"
       - "--max-model-len=8192"
       - "--gpu-memory-utilization=0.90"
