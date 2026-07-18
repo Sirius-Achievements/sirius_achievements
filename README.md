@@ -29,7 +29,7 @@
 3. Разработка модуля загрузки, валидации и трёхступенчатой модерации достижений.
 4. Создание сезонной рейтинговой системы с расчётом баллов по уровням и результатам.
 5. Интеграция OCR-распознавания для PDF/JPEG/PNG/WebP (грамоты, сертификаты).
-6. Реализация AI-генерации характеристики студента по шаблону «характеристика-рекомендация» через YandexGPT.
+6. Реализация AI-генерации характеристики студента по шаблону «характеристика-рекомендация» через локальную LLM (Qwen2.5-Instruct-AWQ, vLLM).
 7. Разработка системы поддержки с тикетами, чатом и шифрованием сообщений в покое.
 8. Внедрение системы push-уведомлений через WebSocket с персистентным хранением.
 9. Покрытие защитными middleware (CSRF, security-headers, rate limiting, upload protection, JWT).
@@ -53,7 +53,7 @@
 | Хеширование пароля | bcrypt | 4.2.1 | Безопасное хранение паролей |
 | Шифрование (поддержка) | cryptography | 46.0.2 | AES-шифрование сообщений тикетов |
 | Email (async) | aiosmtplib | 3.0.2 | Письма верификации/восстановления |
-| HTTP-клиент | httpx | 0.28.1 | Вызовы YandexGPT и AI-микросервиса |
+| HTTP-клиент | httpx | 0.28.1 | Вызовы vLLM и AI-микросервиса |
 | Логирование | structlog | 24.1.0 | Структурированные JSON-логи |
 | Мониторинг | Sentry SDK | 2.32.0 | Error tracking |
 | Загрузка файлов | python-multipart | 0.0.20 | Multipart-парсер |
@@ -142,8 +142,8 @@
               └──────────┘ └────────┘ └────────┘ │
                                                   │
                                           ┌───────┴────────┐
-                                          │   YandexGPT    │
-                                          │  Cloud (HTTPS) │
+                                          │      vLLM      │
+                                          │ (PC, локально) │
                                           └────────────────┘
 ```
 
@@ -552,7 +552,7 @@ OpenAPI (Swagger UI / ReDoc) автоматически отключаются �
 |------|----------|
 | `user_service.py` | CRUD пользователей, смена ролей, блокировка, изменение зон модерации |
 | `achievement_service.py` | Модерация достижений: одобрение, отклонение, возврат на доработку, назначение |
-| `resume_service.py` | OCR-извлечение текста + AI-генерация характеристики (YandexGPT + локальный fallback) |
+| `resume_service.py` | OCR-извлечение текста + AI-генерация характеристики (локальная LLM через vLLM + локальный fallback) |
 | `support_service.py` | Управление тикетами, назначение модераторов, отправка сообщений |
 | `support_maintenance.py` | Фоновая задача: автозакрытие тикетов после `SUPPORT_ARCHIVE_AFTER_DAYS=90` |
 | `page_service.py` | CMS-страницы (правила, политика) |
@@ -622,7 +622,7 @@ OpenAPI (Swagger UI / ReDoc) автоматически отключаются �
      │        ├── PyMuPDF (PDF)
      │        └── EasyOCR  (изображение)
      │
-     └──► YandexGPT API
+     └──► vLLM API (локально, OpenAI-совместимый)
               │
               └─► Текст характеристики (по шаблону)
 ```
@@ -642,7 +642,7 @@ OpenAPI (Swagger UI / ReDoc) автоматически отключаются �
 1. **Доступ.** `can_generate(user_id)` проверяет: пользователь существует, есть подтверждённые достижения, и со времени последней генерации появились новые подтверждённые документы.
 2. **Сбор материала.** По всем `Achievement` со статусом `APPROVED` строится `docs_data` (категория, уровень, баллы, дата, описание + OCR-текст из файла).
 3. **OCR.** Если у достижения есть файл — он скачивается из MinIO/локального диска и отправляется в AI-микросервис. Поддерживаются `.jpg, .jpeg, .png, .webp, .pdf`. Извлечённый текст ограничен `OCR_TEXT_LIMIT=6000` и санитизируется.
-4. **Генерация AI.** Если YandexGPT настроен (`RESUME_EXTERNAL_AI_ENABLED=true` + `YANDEX_API_KEY` + `YANDEX_FOLDER_ID` без плейсхолдеров) — отправляется промпт в `https://llm.api.cloud.yandex.net/foundationModels/v1/completion` (модель `yandexgpt`).
+4. **Генерация AI.** Если локальная LLM включена (`RESUME_LOCAL_AI_ENABLED=true`) — промпт отправляется в OpenAI-совместимый `/chat/completions` сервиса `vllm` (`LOCAL_LLM_BASE_URL`, модель `LOCAL_LLM_MODEL`).
 5. **Локальный fallback.** Если AI недоступен — формируется детерминированная сводка по шаблону (категории, уровни, перечень достижений, итоговая фраза).
 6. **Сохранение.** Результат пишется в `users.resume_text` + `users.resume_generated_at` для последующего быстрого отображения и контроля «новизны».
 
@@ -668,9 +668,11 @@ OpenAPI (Swagger UI / ReDoc) автоматически отключаются �
 
 | Переменная | Назначение |
 |------------|------------|
-| `YANDEX_API_KEY` | Ключ Yandex Cloud |
-| `YANDEX_FOLDER_ID` | Идентификатор каталога |
-| `RESUME_EXTERNAL_AI_ENABLED` | Включить YandexGPT |
+| `LOCAL_LLM_BASE_URL` | Адрес OpenAI-совместимого API vLLM (по умолчанию `http://vllm:8000/v1`) |
+| `LOCAL_LLM_MODEL` | Название модели (например, `Qwen/Qwen2.5-3B-Instruct-AWQ`) |
+| `LOCAL_LLM_API_KEY` | API-ключ vLLM (если настроен) |
+| `LOCAL_LLM_TIMEOUT` | Таймаут запроса к vLLM (сек) |
+| `RESUME_LOCAL_AI_ENABLED` | Включить локальную LLM для генерации сводки |
 | `RESUME_SUPERVISOR` | Имя научрука (по умолчанию «Семёнов М.Е.») |
 | `RESUME_SPECIALTY_DEFAULT` | Специальность по умолчанию |
 | `RESUME_QUALIFICATION_DEFAULT` | Квалификация по умолчанию |
@@ -831,7 +833,7 @@ frontend/src/hooks/
 
 Опциональные (AI-резюме):
 
-| `YANDEX_API_KEY`, `YANDEX_FOLDER_ID`, `RESUME_EXTERNAL_AI_ENABLED` |
+| `LOCAL_LLM_BASE_URL`, `LOCAL_LLM_MODEL`, `LOCAL_LLM_API_KEY`, `LOCAL_LLM_TIMEOUT`, `RESUME_LOCAL_AI_ENABLED` |
 
 Все остальные параметры (rate-limit, points, лимиты файлов) имеют адекватные значения по умолчанию в `app/config.py`.
 

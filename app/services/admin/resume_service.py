@@ -161,10 +161,10 @@ class ResumeService:
                 docs_data.append(document_data)
 
             resume_result: str | None = None
-            if self._is_external_ai_configured():
+            if settings.RESUME_LOCAL_AI_ENABLED:
                 combined_text = self._build_combined_text(student_meta, docs_data)
                 if combined_text:
-                    resume_result = await self._call_yandex_gpt(combined_text, student_meta)
+                    resume_result = await self._call_local_llm(combined_text, student_meta["full_name"])
 
             if not resume_result:
                 resume_result = self._generate_local_resume(student_meta["full_name"], user, docs_data)
@@ -262,12 +262,6 @@ class ResumeService:
             log.exception("Failed to extract OCR text for %s", file_path)
             return ""
 
-    def _is_external_ai_configured(self) -> bool:
-        api_key = settings.YANDEX_API_KEY or ""
-        folder_id = settings.YANDEX_FOLDER_ID or ""
-        has_placeholders = api_key.lower().startswith("your") or folder_id.lower().startswith("your")
-        return bool(settings.RESUME_EXTERNAL_AI_ENABLED and api_key and folder_id and not has_placeholders)
-
     def _build_combined_text(self, student_meta: dict[str, str], docs_data: list[dict[str, object]]) -> str:
         parts = [
             "Данные студента:",
@@ -298,64 +292,50 @@ class ResumeService:
 
         return sanitize_resume_text("\n".join(parts), max_length=PROMPT_TEXT_LIMIT)
 
-    async def _call_yandex_gpt(self, combined_text: str, student_meta: dict[str, str]) -> str | None:
-        api_key = settings.YANDEX_API_KEY
-        folder_id = settings.YANDEX_FOLDER_ID
-        if not api_key or not folder_id:
-            return None
-
-        system_prompt = (
-            "Ты составляешь официальную характеристику-рекомендацию студента на русском языке. "
-            "Используй стиль и структуру образца: заголовок 'ХАРАКТЕРИСТИКА-РЕКОМЕНДАЦИЯ', затем поля "
-            "ФИО студента, курс и группа, специальность, квалификация, средний балл. Далее 2-4 абзаца "
-            "о качествах студента и его подтвержденных достижениях. После этого добавь список наиболее "
-            "значимых достижений и строку 'Научный руководитель ...'. "
-            "Не выдумывай факты, даты, должности, публикации или победы. Если данных мало, пиши нейтрально. "
-            "Не называй текст коммерческим резюме, CV или анкетой."
-        )
-        user_prompt = (
-            "Составь характеристику-рекомендацию строго по шаблону. "
-            "ФИО, курс, группа, специальность, квалификация, средний балл и научного руководителя бери из данных ниже. "
-            f"\n\n{combined_text}"
-        )
-        prompt = {
-            "modelUri": f"gpt://{folder_id}/yandexgpt",
-            "completionOptions": {
-                "stream": False,
-                "temperature": 0.15,
-                "maxTokens": "1800",
-            },
+    async def _call_local_llm(self, combined_text: str, student_name: str) -> str | None:
+        """Вызывает локальную LLM (Qwen2.5-Instruct-AWQ через vLLM,
+        OpenAI-совместимый /chat/completions). Возвращает None при ошибке."""
+        payload = {
+            "model": settings.LOCAL_LLM_MODEL,
+            "temperature": 0.1,
+            "max_tokens": 1000,
             "messages": [
-                {"role": "system", "text": system_prompt},
-                {"role": "user", "text": user_prompt},
-            ],
+                {
+                    "role": "system",
+                    "content": (
+                        f"Ты — строгий HR-специалист. "
+                        f"Составь краткое профессиональное резюме для {student_name}. "
+                        f"Игнорируй имена других людей в тексте документов. "
+                        f"Собери достижения, определи сильные стороны и направления. "
+                        f"Напиши связный текст от третьего лица (4-6 предложений). "
+                        f"Не выводи сырой текст документов."
+                    )
+                },
+                {
+                    "role": "user",
+                    "content": f"Данные из документов:\n{combined_text}"
+                }
+            ]
         }
 
-        url = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
-        headers = {"Content-Type": "application/json", "Authorization": f"Api-Key {api_key}"}
+        url = f"{settings.LOCAL_LLM_BASE_URL.rstrip('/')}/chat/completions"
+        headers = {"Content-Type": "application/json"}
+        if settings.LOCAL_LLM_API_KEY:
+            headers["Authorization"] = f"Bearer {settings.LOCAL_LLM_API_KEY}"
 
         async with httpx.AsyncClient(timeout=45.0) as client:
             try:
-                response = await client.post(url, headers=headers, json=prompt)
+                response = await client.post(url, headers=headers, json=payload, timeout=settings.LOCAL_LLM_TIMEOUT)
                 response.raise_for_status()
-                payload = response.json()
-                result = (
-                    payload.get("result", {})
-                    .get("alternatives", [{}])[0]
-                    .get("message", {})
-                    .get("text", "")
-                )
-                sanitized = sanitize_resume_text(result, max_length=RESUME_TEXT_LIMIT)
-                if sanitized:
-                    log.info("YandexGPT resume generated for %s", student_meta["full_name"])
-                    return sanitized
-            except httpx.HTTPStatusError as exc:
-                response_text = exc.response.text[:200] if exc.response is not None else ""
-                log.error("YandexGPT API HTTP %s: %s", exc.response.status_code, response_text)
-            except Exception:
-                log.exception("YandexGPT API error for %s", student_meta["full_name"])
-
-        return None
+                result = response.json()['choices'][0]['message']['content']
+                log.info("Local LLM (%s) resume generated for %s", settings.LOCAL_LLM_MODEL, student_name)
+                return result
+            except httpx.HTTPStatusError as e:
+                log.error("Local LLM API HTTP %s: %s", e.response.status_code, e.response.text[:200])
+                return None
+            except Exception as e:
+                log.error("Local LLM API error: %s", e)
+                return None
 
     def _generate_local_resume(
         self,

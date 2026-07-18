@@ -75,8 +75,36 @@ services:
       retries: 3
       start_period: 30s
 
+  vllm:
+    image: vllm/vllm-openai:latest
+    container_name: sirius_vllm_new
+    restart: always
+    command:
+      - "--model=Qwen/Qwen2.5-3B-Instruct-AWQ"
+      - "--quantization=awq"
+      - "--max-model-len=8192"
+      - "--gpu-memory-utilization=0.90"
+    ports:
+      - "${PC_BIND_IP:-10.8.0.2}:8000:8000"
+    volumes:
+      - vllm_hf_cache:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 300s
+
 volumes:
   postgres_data_new:
   redis_data:
   minio_data:
+  vllm_hf_cache:
 

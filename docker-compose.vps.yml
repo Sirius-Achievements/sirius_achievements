@@ -22,6 +22,7 @@ services:
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin123}
       MINIO_BUCKET: ${MINIO_BUCKET:-sirius-files}
       AI_SERVICE_URL: http://${PC_VPN_IP:-10.8.0.2}:8001
+      LOCAL_LLM_BASE_URL: http://${PC_VPN_IP:-10.8.0.2}:8000/v1
       TZ: Europe/Moscow
     volumes:
       - uploads_data:/app/static/uploads

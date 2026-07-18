@@ -2,6 +2,9 @@
 .env.*
 !.env.example
 
+# Локальные переопределения docker-compose (например, другая модель на слабом GPU)
+docker-compose.override.yml
+
 *.sqlite3
 *.db
 db.sqlite3
