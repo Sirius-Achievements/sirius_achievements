@@ -29,6 +29,10 @@ export const usersApi = {
     return client.get<SearchSuggestionItem[]>('/users/search', { params: { q, limit } })
   },
 
+  smartSearch(description: string, filters?: { education_levels?: string[]; courses?: string[]; statuses?: string[] }) {
+    return client.post<UserListResponse>('/users/smart-search', { description, ...filters })
+  },
+
   updateRole(id: number, role: string, educationLevel?: string, moderatorCourses?: number[], moderatorGroups?: string[]) {
     return client.post<{ success: boolean; user: User }>(`/users/${id}/role`, {
       role,

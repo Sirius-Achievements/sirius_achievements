@@ -20,6 +20,7 @@ from app.models.user import Users
 from app.repositories.admin.user_repository import UserRepository
 from app.repositories.admin.support_repository import SupportMessageRepository, SupportTicketRepository
 from app.services.admin.resume_service import ResumeService
+from app.services.admin.smart_search_service import SmartSearchService
 from app.services.admin.support_service import SupportService
 from app.utils.access import is_in_zone, is_staff_role
 from app.utils.cache import invalidate_scoreboard_caches
@@ -60,6 +61,13 @@ class UpdateRolePayload(BaseModel):
 
 class SetGpaPayload(BaseModel):
     gpa: str
+
+
+class SmartSearchPayload(BaseModel):
+    description: str
+    education_levels: list[str] | None = None
+    courses: list[str] | None = None
+    statuses: list[str] | None = None
 
 
 def get_support_service(db: AsyncSession = Depends(get_db)):
@@ -414,6 +422,60 @@ async def search_users(
         }
         for user in users
     ]
+
+
+@router.post('/smart-search')
+async def smart_search_users(
+    payload: SmartSearchPayload,
+    current_user=Depends(_check_admin_rights),
+    db: AsyncSession = Depends(get_db),
+):
+    description = payload.description.strip()
+    if not description:
+        raise HTTPException(status_code=400, detail='Опишите критерии поиска.')
+
+    stmt = select(Users).filter(
+        Users.status != UserStatus.REJECTED,
+        Users.role == UserRole.STUDENT,
+    )
+    stmt = _apply_moderator_user_scope(stmt, current_user)
+
+    if payload.education_levels:
+        stmt = stmt.filter(Users.education_level.in_(payload.education_levels))
+    course_ints = [int(c) for c in (payload.courses or []) if str(c).isdigit()]
+    if course_ints:
+        stmt = stmt.filter(Users.course.in_(course_ints))
+    if payload.statuses:
+        stmt = stmt.filter(Users.status.in_(payload.statuses))
+
+    stmt = stmt.order_by(Users.created_at.desc())
+
+    service = SmartSearchService(db)
+    matched_ids = await service.search(stmt, description)
+
+    if matched_ids is None:
+        raise HTTPException(
+            status_code=503,
+            detail='AI-поиск временно недоступен — сервис локальной LLM не отвечает.',
+        )
+
+    users_by_id = {}
+    if matched_ids:
+        found = (await db.execute(select(Users).filter(Users.id.in_(matched_ids)))).scalars().all()
+        users_by_id = {user.id: user for user in found}
+
+    ordered_users = [users_by_id[uid] for uid in matched_ids if uid in users_by_id]
+
+    return {
+        'users': [serialize_user(item) for item in ordered_users],
+        'page': 1,
+        'total_pages': 1,
+        'roles': [item.value for item in UserRole],
+        'statuses': [item.value for item in VISIBLE_USER_STATUSES],
+        'education_levels': AVAILABLE_EDUCATION_LEVELS,
+        'course_mapping': COURSE_MAPPING,
+        'group_mapping': GROUP_MAPPING,
+    }
 
 
 @router.get('/{user_id}')

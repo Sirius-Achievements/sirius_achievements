@@ -4,6 +4,8 @@
 
 # Локальные переопределения docker-compose (например, другая модель на слабом GPU)
 docker-compose.override.yml
+# Локальный однофайловый docker-compose для разработки (prod использует pc.yml/vps.yml)
+docker-compose.yml
 
 *.sqlite3
 *.db
