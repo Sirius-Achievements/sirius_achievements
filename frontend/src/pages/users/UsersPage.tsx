@@ -54,6 +54,9 @@ export function UsersPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [suggestions, setSuggestions] = useState<SearchSuggestionItem[]>([])
+  const [aiMode, setAiMode] = useState(false)
+  const [aiDescription, setAiDescription] = useState('')
+  const [aiActiveDescription, setAiActiveDescription] = useState<string | null>(null)
 
   const filters = useMemo(
     () => ({
@@ -96,12 +99,51 @@ export function UsersPage() {
   }
 
   useEffect(() => {
+    if (aiMode) return
     void loadUsers()
-  }, [filters])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters, aiMode])
 
   useEffect(() => {
     setPage(1)
   }, [query, roleSel, statusSel, eduSel, courseSel, sortBy])
+
+  const runAiSearch = async () => {
+    const trimmed = aiDescription.trim()
+    if (!trimmed) return
+
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      const { data } = await usersApi.smartSearch(trimmed, {
+        education_levels: eduSel.length ? eduSel : undefined,
+        courses: courseSel.length ? courseSel : undefined,
+        statuses: statusSel.length ? statusSel : undefined,
+      })
+      setItems(data.users)
+      setRoles(data.roles)
+      setStatuses(data.statuses)
+      setEducationLevels(data.education_levels)
+      setTotalPages(data.total_pages)
+      setAiActiveDescription(trimmed)
+    } catch (aiError) {
+      setError(getErrorMessage(aiError, 'AI-поиск временно недоступен.'))
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const toggleAiMode = () => {
+    setAiMode((prev) => {
+      const next = !prev
+      if (!next) {
+        setAiActiveDescription(null)
+        setAiDescription('')
+      }
+      return next
+    })
+  }
 
   // Drop selected courses that are no longer offered by the chosen education levels.
   useEffect(() => {
@@ -138,6 +180,9 @@ export function UsersPage() {
     setCourseSel([])
     setSortBy('newest')
     setSuggestions([])
+    setAiMode(false)
+    setAiDescription('')
+    setAiActiveDescription(null)
     setPage(1)
   }
 
@@ -203,41 +248,93 @@ export function UsersPage() {
       ) : null}
 
       <div className="rounded-2xl border border-slate-200 bg-surface p-4 sm:p-5">
-        <form onSubmit={(event) => event.preventDefault()} className="flex flex-wrap items-end gap-3">
-          <SearchAutocompleteInput
-            label="Поиск"
-            value={query}
-            placeholder="Имя, email или телефон..."
-            suggestions={suggestions}
-            onChange={setQuery}
-            onSelectSuggestion={(item) => {
-              setQuery(item.value || item.text)
-              setSuggestions([])
-            }}
-            className="min-w-[240px] flex-1"
-          />
+        <form
+          onSubmit={(event) => {
+            event.preventDefault()
+            if (aiMode) void runAiSearch()
+          }}
+          className="flex flex-wrap items-end gap-3"
+        >
+          <div className="min-w-[240px] flex-1">
+            <div className="mb-1.5 flex items-center justify-between">
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                {aiMode ? 'ИИ-поиск по описанию' : 'Поиск'}
+              </label>
+              <button
+                type="button"
+                onClick={toggleAiMode}
+                className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-colors ${
+                  aiMode
+                    ? 'border-indigo-600 bg-indigo-600 text-white'
+                    : 'border-slate-200 bg-slate-50 text-slate-500 hover:border-indigo-300 hover:text-indigo-600'
+                }`}
+              >
+                ИИ-поиск
+              </button>
+            </div>
 
-          <div className="w-full sm:w-[150px]">
-            <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-500">
-              Сортировка
-            </label>
-            <select
-              value={sortBy}
-              onChange={(event) => setSortBy(event.target.value)}
-              className="h-[38px] w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 outline-none transition-all focus:border-indigo-600 focus:bg-surface"
-            >
-              <option value="newest">Сначала новые</option>
-              <option value="oldest">Сначала старые</option>
-              <option value="first_name_asc">По имени (А-Я)</option>
-              <option value="first_name_desc">По имени (Я-А)</option>
-              <option value="last_name_asc">По фамилии (А-Я)</option>
-              <option value="last_name_desc">По фамилии (Я-А)</option>
-            </select>
+            {aiMode ? (
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={aiDescription}
+                  onChange={(event) => setAiDescription(event.target.value)}
+                  placeholder="Опишите, кого ищете: например, победители олимпиад по математике..."
+                  className="h-[38px] w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 outline-none transition-all focus:border-indigo-600 focus:bg-surface"
+                />
+                <button
+                  type="submit"
+                  disabled={!aiDescription.trim() || isLoading}
+                  className="h-[38px] shrink-0 rounded-lg bg-indigo-600 px-4 text-xs font-medium text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Найти
+                </button>
+              </div>
+            ) : (
+              <SearchAutocompleteInput
+                label=""
+                value={query}
+                placeholder="Имя, email или телефон..."
+                suggestions={suggestions}
+                onChange={setQuery}
+                onSelectSuggestion={(item) => {
+                  setQuery(item.value || item.text)
+                  setSuggestions([])
+                }}
+              />
+            )}
+            {aiMode ? (
+              <p className="mt-1.5 text-[11px] text-slate-400">
+                Локальная LLM проанализирует профили и достижения студентов по вашему описанию. Поиск может занять до минуты.
+              </p>
+            ) : null}
           </div>
 
-          <div className="w-full">
-            <ChipMultiSelect label="Роль" options={roles} selected={roleSel} onToggle={toggleIn(setRoleSel)} labelFor={roleLabel} onReset={() => setRoleSel([])} />
-          </div>
+          {!aiMode ? (
+            <div className="w-full sm:w-[150px]">
+              <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                Сортировка
+              </label>
+              <select
+                value={sortBy}
+                onChange={(event) => setSortBy(event.target.value)}
+                className="h-[38px] w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 outline-none transition-all focus:border-indigo-600 focus:bg-surface"
+              >
+                <option value="newest">Сначала новые</option>
+                <option value="oldest">Сначала старые</option>
+                <option value="first_name_asc">По имени (А-Я)</option>
+                <option value="first_name_desc">По имени (Я-А)</option>
+                <option value="last_name_asc">По фамилии (А-Я)</option>
+                <option value="last_name_desc">По фамилии (Я-А)</option>
+              </select>
+            </div>
+          ) : null}
+
+          {!aiMode ? (
+            <div className="w-full">
+              <ChipMultiSelect label="Роль" options={roles} selected={roleSel} onToggle={toggleIn(setRoleSel)} labelFor={roleLabel} onReset={() => setRoleSel([])} />
+            </div>
+          ) : null}
 
           <div className="w-full">
             <ChipMultiSelect label="Обучение" options={educationLevels} selected={eduSel} onToggle={toggleIn(setEduSel)} onReset={() => setEduSel([])} />
@@ -256,8 +353,9 @@ export function UsersPage() {
           <div className="flex w-full gap-2 sm:w-auto">
             <button
               type="button"
-              onClick={() => void loadUsers()}
-              className="h-[38px] flex-1 rounded-lg bg-indigo-600 px-4 text-xs font-medium text-white transition-colors hover:bg-indigo-700 sm:flex-none"
+              onClick={() => void (aiMode ? runAiSearch() : loadUsers())}
+              disabled={aiMode && !aiDescription.trim()}
+              className="h-[38px] flex-1 rounded-lg bg-indigo-600 px-4 text-xs font-medium text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60 sm:flex-none"
             >
               Обновить
             </button>
@@ -271,6 +369,13 @@ export function UsersPage() {
           </div>
         </form>
       </div>
+
+      {aiActiveDescription ? (
+        <div className="rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-2.5 text-xs text-indigo-700">
+          ИИ-поиск по запросу «{aiActiveDescription}»: найдено {items.length}{' '}
+          {items.length === 1 ? 'студент' : 'студентов'}.
+        </div>
+      ) : null}
 
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-surface shadow-sm">
         {isLoading ? (
