@@ -757,9 +757,14 @@ export function ProfilePage() {
                         </h3>
                         <p className="text-xs text-indigo-700/70 mt-1">Автоматический анализ всех подтвержденных достижений нейросетью.</p>
                       </div>
-                      <span className="shrink-0 inline-flex items-center gap-1.5 rounded-full border border-indigo-200 bg-indigo-100/70 px-3 py-1 text-[11px] font-semibold text-indigo-700 whitespace-nowrap">
-                        Скоро — в разработке
-                      </span>
+                      <button
+                        type="button"
+                        onClick={() => void handleGenerateResume()}
+                        disabled={isGeneratingResume || !canGenerate}
+                        className="shrink-0 inline-flex items-center gap-1.5 rounded-full bg-indigo-600 px-3.5 py-1.5 text-[11px] font-semibold text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
+                      >
+                        {isGeneratingResume ? 'Генерируем...' : resumeText ? 'Обновить' : 'Сгенерировать'}
+                      </button>
                     </div>
 
                     {resumeText ? (
@@ -768,9 +773,12 @@ export function ProfilePage() {
                       </div>
                     ) : (
                       <div className="text-center py-6 bg-surface/50 border border-indigo-100 border-dashed rounded-lg text-indigo-400 text-xs mt-2">
-                        Резюме будет формироваться автоматически на основе ваших подтверждённых достижений.<br />Функция скоро появится.
+                        Резюме ещё не сформировано. Нажмите «Сгенерировать», чтобы создать сводку на основе подтверждённых достижений.
                       </div>
                     )}
+                    {!canGenerate && generateReason ? (
+                      <p className="mt-2 text-[11px] text-indigo-400">{generateReason}</p>
+                    ) : null}
                   </div>
                 </div>
               )}

@@ -627,9 +627,17 @@ export function UserDetailPage() {
           <div className="bg-indigo-50/60 p-5 sm:p-6 rounded-xl border border-indigo-100 shadow-sm">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
               <div><h3 className="text-base font-bold text-indigo-900">AI-сводка профиля</h3><p className="text-xs text-indigo-700/70 mt-1">Формируется автоматически на основе подтверждённых достижений студента.</p></div>
-              <span className="shrink-0 inline-flex items-center gap-1.5 rounded-full border border-indigo-200 bg-indigo-100/70 px-3 py-1 text-[11px] font-semibold text-indigo-700 whitespace-nowrap">Скоро — в разработке</span>
+              <button
+                type="button"
+                onClick={() => void handleGenerateResume()}
+                disabled={isGeneratingResume || !canGenerateResume}
+                className="shrink-0 inline-flex items-center gap-1.5 rounded-full bg-indigo-600 px-3.5 py-1.5 text-[11px] font-semibold text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
+              >
+                {isGeneratingResume ? 'Генерируем...' : resumeText ? 'Обновить' : 'Сгенерировать'}
+              </button>
             </div>
-            {resumeText ? <div className="bg-surface border border-indigo-100/80 rounded-lg p-4 text-sm text-slate-800 whitespace-pre-wrap leading-relaxed shadow-sm">{resumeText}</div> : <div className="text-center py-6 bg-surface/50 border border-indigo-100 border-dashed rounded-lg text-indigo-400 text-xs mt-2">Резюме будет формироваться автоматически. Функция скоро появится.</div>}
+            {resumeText ? <div className="bg-surface border border-indigo-100/80 rounded-lg p-4 text-sm text-slate-800 whitespace-pre-wrap leading-relaxed shadow-sm">{resumeText}</div> : <div className="text-center py-6 bg-surface/50 border border-indigo-100 border-dashed rounded-lg text-indigo-400 text-xs mt-2">Резюме ещё не сформировано.</div>}
+            {!canGenerateResume && resumeReason ? <p className="mt-2 text-[11px] text-indigo-400">{resumeReason}</p> : null}
           </div>
 
           {detail.season_history.length ? <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden text-white shadow-md relative"><div className="px-5 py-3 border-b border-slate-700/50 flex justify-between items-center relative z-10"><h3 className="text-sm font-bold text-white">Зал славы (Архив сезонов)</h3></div><div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4 relative z-10">{detail.season_history.map((item) => <div key={item.id} className="bg-surface/10 rounded-lg p-4 flex justify-between items-center border border-white/5 hover:bg-surface/20 transition-colors"><div><div className="text-xs font-bold text-slate-200">{item.season_name}</div><div className="text-[10px] text-slate-400 mt-1 uppercase tracking-wider font-semibold">Место: <span className="text-white text-sm">#{item.rank}</span></div></div><div className="text-xl font-black text-yellow-400">{item.points} <span className="text-[10px] font-normal text-slate-400">б.</span></div></div>)}</div></div> : null}
