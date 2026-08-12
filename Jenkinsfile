@@ -94,6 +94,8 @@ pipeline {
 
           rsync -a --delete \
             --exclude='.git/' \
+            --exclude='nginx/conf.d/wm.htpasswd' \
+            --exclude='nginx/conf.d/wm-extra/' \
             --exclude='.env' \
             --exclude='models/' \
             --exclude='postgres_data*/' \
