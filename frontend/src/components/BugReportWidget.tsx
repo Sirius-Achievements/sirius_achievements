@@ -2,6 +2,7 @@ import { useState } from 'react'
 
 import { bugReportsApi } from '@/api/bugReports'
 import { Modal } from '@/components/ui/Modal'
+import { useAuth } from '@/hooks/useAuth'
 
 function getEmercomSessionId(): string | undefined {
   // The collector may expose an id under different names; never read form values
@@ -11,6 +12,7 @@ function getEmercomSessionId(): string | undefined {
 }
 
 export function BugReportWidget() {
+  const { user } = useAuth()
   const [open, setOpen] = useState(false)
   const [description, setDescription] = useState('')
   const [state, setState] = useState<'idle' | 'sending' | 'success' | 'error'>('idle')
@@ -33,6 +35,10 @@ export function BugReportWidget() {
     } catch {
       setState('error')
     }
+  }
+
+  if (user?.role !== 'SUPER_ADMIN') {
+    return null
   }
 
   return (
