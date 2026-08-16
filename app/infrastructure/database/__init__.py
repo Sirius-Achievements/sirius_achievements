@@ -42,5 +42,6 @@ try:
     from app.models.support_message import SupportMessage
     from app.models.audit_log import AuditLog
     from app.models.user_note import UserNote
+    from app.models.bug_report import BugReport
 except ImportError:
     pass

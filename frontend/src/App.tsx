@@ -12,6 +12,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
 import { onServerError } from '@/utils/serverErrorBus'
 import { APP_PREFIX } from '@/utils/constants'
+import { BugReportWidget } from '@/components/BugReportWidget'
 
 // Route-level code splitting: each page ships as its own chunk, so heavy
 // libraries (chart.js, pdf.js) load only when their page is opened. Pages use
@@ -155,6 +156,7 @@ export default function App() {
               <ServerErrorToastBridge />
               <AppRoutes />
               <ToastViewport />
+              <BugReportWidget />
             </BrowserRouter>
           </NotificationProvider>
         </AuthProvider>
