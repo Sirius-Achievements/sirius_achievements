@@ -97,7 +97,7 @@ pipeline {
             --exclude='nginx/conf.d/wm.htpasswd' \
             --exclude='nginx/conf.d/wm-extra/' \
             --exclude='.env' \
-            --exclude='models/' \
+            --exclude='/models/' \
             --exclude='postgres_data*/' \
             --exclude='minio_data*/' \
             --exclude='redis_data*/' \
@@ -122,7 +122,7 @@ pipeline {
             rsync -az --delete -e "ssh -o StrictHostKeyChecking=no" \
               --exclude='.git/' \
               --exclude='.env' \
-              --exclude='models/' \
+              --exclude='/models/' \
               --exclude='postgres_data*/' \
               --exclude='minio_data*/' \
               --exclude='redis_data*/' \
