@@ -246,7 +246,7 @@ pipeline {
             ssh -o StrictHostKeyChecking=no "$PC_HOST" "
               set -e
               cd '$PC_DEPLOY_DIR'
-              docker build -t '$APP_IMAGE' -f Dockerfile .
+              docker build --build-arg APP_VERSION='$IMAGE_TAG' -t '$APP_IMAGE' -f Dockerfile .
             "
 
             echo "Streaming image $APP_IMAGE from PC to VPS over the VPN..."
