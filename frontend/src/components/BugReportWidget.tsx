@@ -26,7 +26,7 @@ export function BugReportWidget() {
         description: description.trim() || undefined,
         page_url: window.location.href,
         session_id: getEmercomSessionId(),
-        app_version: import.meta.env.VITE_APP_VERSION,
+        app_version: __APP_VERSION__,
       })
       setState('success')
       setDescription('')
