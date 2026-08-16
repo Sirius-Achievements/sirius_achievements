@@ -55,6 +55,7 @@ export function Sidebar({ user }: SidebarProps) {
     location.pathname.includes('/moderation/support') &&
     !location.search.includes('tab=all') &&
     !location.search.includes('tab=chats')
+  const isBugReportsPage = location.pathname === '/moderation/bug-reports'
 
   const Badge = ({ value }: { value?: number }) => value ? (
     <span className="inline-flex h-[22px] min-w-[22px] shrink-0 items-center justify-center rounded-full bg-indigo-500 px-1.5 text-[10px] font-semibold leading-none text-white shadow-sm ring-2 ring-surface">
@@ -324,6 +325,16 @@ export function Sidebar({ user }: SidebarProps) {
                     Новые обращения
                     <Badge value={inboxCounts?.new_support} />
                   </Link>
+                  {user?.role === 'SUPER_ADMIN' ? (
+                    <Link
+                      to="/moderation/bug-reports"
+                      className={`flex items-center justify-between gap-3 px-2 py-1.5 text-sm rounded-md transition-colors ${
+                        isBugReportsPage ? 'text-indigo-600 font-medium' : 'text-slate-500 hover:text-indigo-600'
+                      }`}
+                    >
+                      Баг-репорты
+                    </Link>
+                  ) : null}
                 </div>
               ) : null}
             </div>

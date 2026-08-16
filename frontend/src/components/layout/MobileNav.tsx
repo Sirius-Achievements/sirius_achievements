@@ -171,6 +171,11 @@ export function MobileNav({ user }: MobileNavProps) {
                   <Link to="/moderation/support" className="block py-3 px-2 rounded-lg hover:bg-slate-50 text-sm font-medium text-slate-700">
                     Новые обращения {inboxCounts?.new_support ? `(${inboxCounts.new_support})` : ''}
                   </Link>
+                  {user?.role === 'SUPER_ADMIN' ? (
+                    <Link to="/moderation/bug-reports" className="block py-3 px-2 rounded-lg hover:bg-slate-50 text-sm font-medium text-slate-700">
+                      Баг-репорты
+                    </Link>
+                  ) : null}
                 </>
               ) : null}
 

@@ -32,6 +32,7 @@ const NotFoundPage = lazy(() => import('@/pages/errors/NotFoundPage').then((m) =
 const ServerErrorPage = lazy(() => import('@/pages/errors/ServerErrorPage').then((m) => ({ default: m.ServerErrorPage })))
 const LeaderboardPage = lazy(() => import('@/pages/leaderboard/LeaderboardPage').then((m) => ({ default: m.LeaderboardPage })))
 const ModerationAchievementsPage = lazy(() => import('@/pages/moderation/ModerationAchievementsPage').then((m) => ({ default: m.ModerationAchievementsPage })))
+const BugReportsPage = lazy(() => import('@/pages/moderation/BugReportsPage').then((m) => ({ default: m.BugReportsPage })))
 const ModerationSupportChatPage = lazy(() => import('@/pages/moderation/ModerationSupportChatPage').then((m) => ({ default: m.ModerationSupportChatPage })))
 const ModerationSupportPage = lazy(() => import('@/pages/moderation/ModerationSupportPage').then((m) => ({ default: m.ModerationSupportPage })))
 const ModerationUsersPage = lazy(() => import('@/pages/moderation/ModerationUsersPage').then((m) => ({ default: m.ModerationUsersPage })))
@@ -86,6 +87,16 @@ function RequireStaff() {
   return <Outlet />
 }
 
+function RequireSuperAdmin() {
+  const { user } = useAuth()
+
+  if (user?.status === 'deleted' || user?.role !== 'SUPER_ADMIN') {
+    return <Navigate to="/403" replace />
+  }
+
+  return <Outlet />
+}
+
 function RequireUsableAccount() {
   const { user } = useAuth()
 
@@ -134,6 +145,9 @@ function AppRoutes() {
             <Route path="/moderation/achievements" element={<ModerationAchievementsPage />} />
             <Route path="/moderation/support" element={<ModerationSupportPage />} />
             <Route path="/moderation/support/:id" element={<ModerationSupportChatPage />} />
+          </Route>
+          <Route element={<RequireSuperAdmin />}>
+            <Route path="/moderation/bug-reports" element={<BugReportsPage />} />
           </Route>
         </Route>
       </Route>
