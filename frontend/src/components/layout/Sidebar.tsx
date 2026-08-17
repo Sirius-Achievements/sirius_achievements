@@ -333,6 +333,7 @@ export function Sidebar({ user }: SidebarProps) {
                       }`}
                     >
                       Баг-репорты
+                      <Badge value={inboxCounts?.bug_reports} />
                     </Link>
                   ) : null}
                 </div>

@@ -82,6 +82,7 @@ export interface InboxCounts {
   pending_users?: number
   pending_achievements?: number
   new_support?: number
+  bug_reports?: number
   support_unread?: number
   total: number
   generated_at?: string

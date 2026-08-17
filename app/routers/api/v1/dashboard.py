@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.infrastructure.database import get_db
 from app.middlewares.api_auth_middleware import auth
 from app.models.achievement import Achievement
+from app.models.bug_report import BugReport
 from app.models.enums import AchievementCategory, AchievementStatus, SupportTicketStatus, UserRole, UserStatus
 from app.models.notification import Notification
 from app.models.support_message import SupportMessage
@@ -105,11 +106,16 @@ async def inbox_counts(
         pending_users = (await db.execute(users_stmt)).scalar() or 0
         pending_achievements = (await db.execute(achievements_stmt)).scalar() or 0
         new_support = (await db.execute(support_stmt)).scalar() or 0
-        total = int(pending_users or 0) + int(pending_achievements or 0) + int(new_support or 0)
+        bug_reports = 0
+        if user.role == UserRole.SUPER_ADMIN:
+            bug_reports = (await db.execute(select(func.count()).select_from(BugReport))).scalar() or 0
+
+        total = int(pending_users or 0) + int(pending_achievements or 0) + int(new_support or 0) + int(bug_reports or 0)
         return {
             'pending_users': int(pending_users or 0),
             'pending_achievements': int(pending_achievements or 0),
             'new_support': int(new_support or 0),
+            'bug_reports': int(bug_reports or 0),
             'total': total,
             'generated_at': generated_at,
         }
@@ -575,7 +581,6 @@ async def dashboard(
         'rejected_achievements': int(doc_stats.rejected or 0),
         'recommendations': recommendations,
     }
-
 
 
 
