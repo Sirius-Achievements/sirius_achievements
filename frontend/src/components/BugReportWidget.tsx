@@ -4,10 +4,14 @@ import { bugReportsApi } from '@/api/bugReports'
 import { Modal } from '@/components/ui/Modal'
 
 function getEmercomSessionId(): string | undefined {
-  // The collector may expose an id under different names; never read form values
-  // or storage, which could contain personal data or credentials.
-  const scope = window as Window & { emercom?: { sessionId?: string }; __emercomSessionId?: string }
-  return scope.emercom?.sessionId ?? scope.__emercomSessionId
+  // Emercom's collector creates one UUID per browser tab and deliberately
+  // exposes it as a public API. Do not read generic storage: it can contain
+  // unrelated user data or credentials.
+  const scope = window as Window & {
+    epoch?: { session?: string }
+    __wm?: { session?: string }
+  }
+  return scope.epoch?.session ?? scope.__wm?.session
 }
 
 export function BugReportWidget() {
