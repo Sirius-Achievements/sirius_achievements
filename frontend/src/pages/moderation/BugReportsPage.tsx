@@ -6,6 +6,7 @@ import { PaginationFooter } from '@/components/ui/PaginationFooter'
 import { getErrorMessage } from '@/utils/http'
 
 const PAGE_SIZE = 20
+const EMERCOM_CONSOLE_URL = 'https://emercom.online/m-185383cf3e/console'
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat('ru-RU', {
@@ -86,7 +87,16 @@ export function BugReportsPage() {
                 {expanded ? (
                   <dl className="mt-4 grid gap-3 border-t border-slate-100 pt-4 text-sm sm:grid-cols-2">
                     <div><dt className="text-xs font-medium text-slate-500">Версия</dt><dd className="mt-1 break-words text-slate-800">{report.app_version || '—'}</dd></div>
-                    <div><dt className="text-xs font-medium text-slate-500">Сессия Emercom</dt><dd className="mt-1 break-all font-mono text-slate-800">{report.session_id || 'Не передана'}</dd></div>
+                    <div>
+                      <dt className="text-xs font-medium text-slate-500">Сессия Emercom</dt>
+                      <dd className="mt-1 break-all font-mono text-slate-800">{report.session_id || 'Не передана'}</dd>
+                      {report.session_id ? (
+                        <a href={`${EMERCOM_CONSOLE_URL}/replay/${encodeURIComponent(report.session_id)}?site=sa`} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-700 hover:underline">
+                          Открыть реплей
+                          <span aria-hidden="true">↗</span>
+                        </a>
+                      ) : null}
+                    </div>
                     <div className="sm:col-span-2"><dt className="text-xs font-medium text-slate-500">Пользователь</dt><dd className="mt-1 text-slate-800">{report.user ? `${reporterName(report)} · ${report.user.email}` : 'Анонимный посетитель'}</dd></div>
                     <div className="sm:col-span-2"><dt className="text-xs font-medium text-slate-500">User-Agent</dt><dd className="mt-1 break-all text-xs text-slate-700">{report.user_agent || '—'}</dd></div>
                   </dl>
