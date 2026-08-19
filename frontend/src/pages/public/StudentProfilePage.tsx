@@ -216,22 +216,18 @@ function StudentProfilePageInner() {
       type: 'radar',
       data: {
         labels: RADAR_CATS,
-        datasets: RADAR_CATS.map((cat, i) => {
-          const val = pointsMap[cat] ?? 0
-          const color = RADAR_COLORS[i]
-          return {
-            label: cat,
-            data: RADAR_CATS.map((c) => (c === cat ? val : 0)),
-            borderColor: val > 0 ? color.border : 'transparent',
-            backgroundColor: val > 0 ? color.bg : 'transparent',
-            borderWidth: 2,
-            pointBackgroundColor: val > 0 ? color.border : 'transparent',
-            pointBorderColor: '#fff',
-            pointBorderWidth: 2,
-            pointRadius: val > 0 ? 4 : 0,
-            hidden: hiddenCats.has(cat),
-          }
-        }),
+        datasets: [{
+          label: 'Достижения',
+          data: RADAR_CATS.map((cat) => hiddenCats.has(cat) ? 0 : (pointsMap[cat] ?? 0)),
+          borderColor: '#6366f1',
+          backgroundColor: 'rgba(99, 102, 241, 0.16)',
+          borderWidth: 2,
+          pointBackgroundColor: RADAR_CATS.map((cat, i) => hiddenCats.has(cat) ? 'transparent' : RADAR_COLORS[i].border),
+          pointBorderColor: '#fff',
+          pointBorderWidth: 2,
+          pointRadius: RADAR_CATS.map((cat) => hiddenCats.has(cat) ? 0 : 4),
+          pointHoverRadius: 5,
+        }],
       },
       options: {
         responsive: true,
@@ -244,7 +240,7 @@ function StudentProfilePageInner() {
             bodyFont: font,
             padding: 10,
             cornerRadius: 8,
-            callbacks: { label: (ctx) => ctx.parsed.r > 0 ? ` ${ctx.dataset.label}: ${ctx.parsed.r} б.` : '' },
+            callbacks: { label: (ctx) => ctx.parsed.r > 0 ? ` ${ctx.label}: ${ctx.parsed.r} б.` : '' },
           },
         },
         scales: {
