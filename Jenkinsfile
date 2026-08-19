@@ -31,7 +31,7 @@ pipeline {
 
     AI_HEALTH_URL    = 'http://10.8.0.2:8001/health'
     MINIO_HEALTH_URL = 'http://10.8.0.2:9000/minio/health/ready'
-    WEB_HEALTH_URL   = 'https://emercom.online/health'
+    WEB_HEALTH_URL   = 'https://sirius-achievements.ru/health'
 
     NOTIFY_EMAIL = 'efirkoumir@gmail.com,yaroslavroch2@gmail.com,matveys909@gmail.com,sh1tc0der@yandex.ru'
     // NOTE: SKIP_DEPLOY / IMAGE_TAG / APP_IMAGE / AI_IMAGE are intentionally NOT
