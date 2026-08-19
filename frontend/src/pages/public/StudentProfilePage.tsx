@@ -351,11 +351,11 @@ function StudentProfilePageInner() {
         </div>
       </div>
 
-      <div className={`grid grid-cols-1 gap-6 ${hasIntroChart ? 'xl:grid-cols-12 xl:items-start' : ''}`}>
-        <div className={`flex flex-col gap-6 ${hasIntroChart ? 'xl:col-span-4' : ''}`}>
-          <div className="bg-surface rounded-2xl border border-slate-200 shadow-sm p-5">
+      <div className={`grid grid-cols-1 gap-4 ${hasIntroChart ? 'xl:grid-cols-12 xl:items-start' : ''}`}>
+        <div className={`grid gap-4 ${data.student.session_gpa ? 'xl:grid-cols-[minmax(0,1fr)_280px]' : ''} ${hasIntroChart ? 'xl:col-span-4' : ''}`}>
+          <div className="bg-surface rounded-2xl border border-slate-200 shadow-sm p-4">
             <h3 className="text-sm font-semibold text-slate-700 mb-4">Сводка профиля</h3>
-            <div className={`grid grid-cols-1 gap-3 sm:grid-cols-2 ${hasIntroChart ? 'xl:grid-cols-1' : 'xl:grid-cols-4'}`}>
+            <div className={`grid grid-cols-2 gap-3 ${hasIntroChart ? 'xl:grid-cols-1' : 'xl:grid-cols-4'}`}>
               <div className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
                 <div className="text-[11px] uppercase tracking-wider text-slate-400">Обучение</div>
                 <div className="mt-1 text-sm font-semibold text-slate-800">{data.student.education_level || 'Не указано'}</div>
@@ -388,7 +388,7 @@ function StudentProfilePageInner() {
             ) : null}
           </div>
           {data.student.session_gpa ? (
-            <div className="bg-surface rounded-2xl border border-slate-200 shadow-sm p-5">
+            <div className="bg-surface rounded-2xl border border-slate-200 shadow-sm p-4">
               <h3 className="text-sm font-semibold text-slate-700 mb-3">Оценка модератора</h3>
               <div className="space-y-3">
                 <div>
@@ -404,11 +404,11 @@ function StudentProfilePageInner() {
           ) : null}
         </div>
 
-        <div className="space-y-6">
+        <div className="space-y-4">
           {hasChartData ? (
-            <div className="bg-surface rounded-2xl border border-slate-200 shadow-sm p-5">
+            <div className="bg-surface rounded-2xl border border-slate-200 shadow-sm p-4">
               <h3 className="text-sm font-semibold text-slate-700 mb-3">Динамика достижений</h3>
-              <div className="h-72 w-full">
+              <div className="h-56 w-full">
                 <canvas ref={progressChartRef} />
               </div>
             </div>
@@ -425,9 +425,9 @@ function StudentProfilePageInner() {
             const activeCats = RADAR_CATS.filter((c) => pointsMap[c] > 0)
             if (!activeCats.length) return null
             return (
-              <div className="bg-surface rounded-2xl border border-slate-200 shadow-sm p-5">
+              <div className="bg-surface rounded-2xl border border-slate-200 shadow-sm p-4">
                 <h3 className="text-sm font-semibold text-slate-700 mb-4">Портрет достижений</h3>
-                <div className="h-64">
+                <div className="h-56">
                   <canvas ref={radarChartRef} />
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2">
