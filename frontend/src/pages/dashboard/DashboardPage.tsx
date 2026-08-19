@@ -131,15 +131,23 @@ export function DashboardPage() {
         return
       }
       if (!isStaff && (stats.my_points ?? 0) > 0 && stats.category_breakdown?.length) {
+        const isDarkTheme = dark()
+        const segmentCount = stats.category_breakdown.length
+        const primaryColor = cssVar('--theme-accent', isDarkTheme ? '#b34230' : '#4cbdcf')
+        const translucentPrimary = isDarkTheme ? 'rgba(179, 66, 48, 0.5)' : 'rgba(76, 189, 207, 0.5)'
+
         chartRef.current = new Chart(canvas.getContext('2d')!, {
           type: 'doughnut',
           data: {
             labels: stats.category_breakdown.map((item) => item.category),
             datasets: [{
               data: stats.category_breakdown.map((item) => item.points),
-              backgroundColor: dark() ? ['#818cf8', '#f97316', '#22d3ee', '#facc15', '#f472b6', '#34d399'] : ['#4f46e5', '#ea580c', '#0891b2', '#ca8a04', '#db2777', '#059669'],
+              backgroundColor: Array(segmentCount).fill(translucentPrimary),
+              hoverBackgroundColor: Array(segmentCount).fill(primaryColor),
               borderWidth: 2,
               borderColor: cssVar('--theme-surface', '#ffffff'),
+              hoverBorderColor: primaryColor,
+              hoverOffset: 4,
             }],
           },
           options: {
