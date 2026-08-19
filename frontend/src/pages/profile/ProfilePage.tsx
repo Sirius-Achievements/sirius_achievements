@@ -645,15 +645,18 @@ export function ProfilePage() {
                     </div>
                     <p className="text-[11px] text-slate-500 mt-1">Средний балл сессии, который влияет на рейтинг</p>
                   </div>
-                  <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4">
-                    <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider mb-1">Бонус в рейтинг</p>
+                  <div
+                    className="border rounded-xl p-4"
+                    style={{ backgroundColor: 'var(--theme-accent-soft)', borderColor: 'var(--theme-accent)' }}
+                  >
+                    <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: 'var(--theme-accent)' }}>Бонус в рейтинг</p>
                     <div className="flex items-end gap-2">
-                      <span className="text-2xl font-bold text-indigo-700">
+                      <span className="text-2xl font-bold" style={{ color: 'var(--theme-accent-strong)' }}>
                         {profile.gpa_bonus ? `+${profile.gpa_bonus}` : '0'}
                       </span>
-                      <span className="text-xs text-indigo-400 mb-1">баллов</span>
+                      <span className="text-xs mb-1" style={{ color: 'var(--theme-accent)' }}>баллов</span>
                     </div>
-                    <p className="text-[11px] text-indigo-500/80 mt-1">Бонус автоматически считается из оценки модератора</p>
+                    <p className="text-[11px] mt-1" style={{ color: 'var(--theme-accent)' }}>Бонус автоматически считается из оценки модератора</p>
                   </div>
                 </div>
               )}
