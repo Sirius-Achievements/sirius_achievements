@@ -8,7 +8,7 @@
 
   <style>
     .sun-center {
-      fill: #b69fff;
+      fill: #4cbdcf;
       mask: url(#moon-mask);
       filter: drop-shadow(0 0 12px rgba(109,94,243,0.6));
       animation: morphToSun 3s ease-in-out forwards;
@@ -16,7 +16,7 @@
 
     .ray {
       opacity: 0;
-      stroke: #6d5ef3;
+      stroke: #2f9fb0;
       stroke-width: 4;
       stroke-linecap: round;
       transform-origin: 100px 100px;
@@ -35,7 +35,7 @@
         filter: drop-shadow(0 0 12px rgba(255,255,255,0.9));
       }
       100% {
-        fill: #6d5ef3;
+        fill: #2f9fb0;
         filter: drop-shadow(0 0 0px rgba(109,94,243,0));
       }
     }

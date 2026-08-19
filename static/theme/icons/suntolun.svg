@@ -8,13 +8,13 @@
 
   <style>
     .sun-center {
-      fill: #6d5ef3;
+      fill: #b34230;
       mask: url(#moon-mask);
       animation: morphToMoon 3s ease-in-out forwards;
     }
 
     .ray {
-      stroke: #6d5ef3;
+      stroke: #b34230;
       stroke-width: 4;
       stroke-linecap: round;
       transform-origin: 100px 100px;
@@ -28,11 +28,11 @@
 
     @keyframes morphToMoon {
       0% {
-        fill: #6d5ef3;
+        fill: #b34230;
         filter: drop-shadow(0 0 0px rgba(109,94,243,0));
       }
       100% {
-        fill: #b69fff;
+        fill: #d65a43;
         filter: drop-shadow(0 0 12px rgba(109,94,243,0.6));
       }
     }

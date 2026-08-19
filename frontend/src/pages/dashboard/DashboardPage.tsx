@@ -119,7 +119,7 @@ export function DashboardPage() {
               tooltip: {
                 padding: 10,
                 cornerRadius: 8,
-                backgroundColor: dark() ? 'rgba(26, 23, 37, 0.96)' : 'rgba(15, 23, 42, 0.9)',
+                backgroundColor: dark() ? 'rgba(13, 17, 19, 0.96)' : 'rgba(15, 23, 42, 0.9)',
               },
             },
             scales: {
@@ -148,7 +148,7 @@ export function DashboardPage() {
             cutout: '75%',
             plugins: {
               legend: { position: 'right', labels: { usePointStyle: true, boxWidth: 8, color: cssVar('--theme-text-soft', '#556074'), font: { size: 11 } } },
-              tooltip: { padding: 12, cornerRadius: 8, backgroundColor: dark() ? 'rgba(26, 23, 37, 0.96)' : 'rgba(15, 23, 42, 0.9)' },
+              tooltip: { padding: 12, cornerRadius: 8, backgroundColor: dark() ? 'rgba(13, 17, 19, 0.96)' : 'rgba(15, 23, 42, 0.9)' },
             },
           },
         })
