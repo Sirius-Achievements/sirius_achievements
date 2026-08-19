@@ -29,10 +29,10 @@ function statusLabel(status: string, moderatorId?: number, currentUserId?: numbe
 }
 
 function statusClass(status: string, moderatorId?: number, currentUserId?: number) {
-  if (status === 'approved') return 'bg-green-50 text-green-700 border-green-200'
-  if (status === 'rejected') return 'bg-red-50 text-red-700 border-red-200'
-  if (status === 'revision') return 'bg-yellow-100 text-yellow-800 border-yellow-300'
-  if (status === 'pending' && !moderatorId) return 'bg-yellow-50 text-yellow-700 border-yellow-200'
+  if (status === 'approved') return 'bg-indigo-50 text-indigo-700 border-indigo-200'
+  if (status === 'rejected') return 'bg-indigo-50 text-indigo-700 border-indigo-200'
+  if (status === 'revision') return 'bg-indigo-50 text-indigo-700 border-indigo-200'
+  if (status === 'pending' && !moderatorId) return 'bg-indigo-50 text-indigo-700 border-indigo-200'
   if (status === 'pending' && moderatorId === currentUserId) return 'bg-blue-50 text-blue-700 border-blue-200'
   return 'bg-slate-100 text-slate-500 border-slate-200'
 }

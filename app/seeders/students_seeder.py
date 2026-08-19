@@ -1,4 +1,4 @@
-"""Seeder: 100 students with diverse achievements and fake document files."""
+"""Seeder: six specialist groups with diverse achievements and fake document files."""
 
 import os
 import random
@@ -20,6 +20,7 @@ from app.models.enums import (
 from app.models.user import Users
 
 from app.utils.password import hash_password
+from app.utils.education import groups_for
 
 # ── Данные для генерации ──
 
@@ -142,7 +143,6 @@ DESCRIPTIONS = {
 
 LEVELS = list(AchievementLevel)
 CATEGORIES = list(AchievementCategory)
-EDUCATION_LEVELS = list(EducationLevel)
 STATUSES_WEIGHTED = (
     [AchievementStatus.APPROVED] * 5
     + [AchievementStatus.PENDING] * 3
@@ -175,15 +175,9 @@ def _make_stub_file(directory: str, filename: str) -> str:
     return path
 
 
-STUDENTS_PER_LEVEL = 100
-
-COURSE_RANGE = {
-    EducationLevel.COLLEGE: (1, 4),
-    EducationLevel.BACHELOR: (1, 4),
-    EducationLevel.SPECIALIST: (1, 6),
-    EducationLevel.MASTER: (1, 2),
-    EducationLevel.POSTGRADUATE: (1, 3),
-}
+# The actual programme has three cohorts, two study groups each.
+SPECIALIST_COURSES = (1, 2, 3)
+STUDENTS_PER_GROUP = 25
 
 
 class StudentsSeeder:
@@ -195,77 +189,75 @@ class StudentsSeeder:
         students_created = 0
         achievements_created = 0
 
-        for edu in EDUCATION_LEVELS:
-            edu_slug = edu.name.lower()
-
-            # Check how many already seeded for this level
-            existing = await db.execute(
-                select(Users).where(
-                    Users.role == UserRole.STUDENT.value,
-                    Users.email.like(f"%seed.{edu_slug}%"),
-                )
-            )
-            already = len(existing.scalars().all())
-            remaining = STUDENTS_PER_LEVEL - already
-            if remaining <= 0:
-                print(f"   Skipping {edu.value} (already {already} seeded)")
-                continue
-
-            print(f"   Seeding {remaining} students for {edu.value}...")
-            course_lo, course_hi = COURSE_RANGE.get(edu, (1, 2))
-
-            for i in range(already + 1, already + remaining + 1):
-                is_female = random.random() < 0.5
-                if is_female:
-                    first = random.choice(FIRST_NAMES_F)
-                    last = random.choice(LAST_NAMES_F)
-                else:
-                    first = random.choice(FIRST_NAMES_M)
-                    last = random.choice(LAST_NAMES_M)
-
-                student = Users(
-                    email=f"seed.{edu_slug}{i:03d}@example.com",
-                    hashed_password=hashed,
-                    first_name=first,
-                    last_name=last,
-                    role=UserRole.STUDENT.value,
-                    status=UserStatus.ACTIVE.value,
-                    education_level=edu.value,
-                    course=random.randint(course_lo, course_hi),
-                    is_active=True,
-                    created_at=now - timedelta(days=random.randint(30, 365)),
-                )
-                db.add(student)
-                await db.flush()
-                students_created += 1
-
-                for _ in range(random.randint(1, 8)):
-                    cat = random.choice(CATEGORIES)
-                    level = random.choice(LEVELS)
-                    ach_status = random.choice(STATUSES_WEIGHTED)
-                    lo, hi = POINTS_BY_LEVEL[level]
-                    points = random.randint(lo, hi) if ach_status == AchievementStatus.APPROVED else 0
-
-                    filename = f"seed_{student.id}_{achievements_created + 1}.pdf"
-                    _make_stub_file(upload_dir, filename)
-
-                    ach = Achievement(
-                        user_id=student.id,
-                        title=random.choice(ACHIEVEMENT_TITLES[cat]),
-                        description=DESCRIPTIONS[cat],
-                        file_path=f"achievements/{filename}",
-                        category=cat.name,
-                        level=level.name,
-                        points=points,
-                        status=ach_status.name,
-                        moderator_id=moderator_id if ach_status != AchievementStatus.PENDING else None,
-                        created_at=now - timedelta(days=random.randint(1, 300)),
+        for course in SPECIALIST_COURSES:
+            for group in groups_for(EducationLevel.SPECIALIST.value, course):
+                group_slug = group.lower().replace("-", "").replace("/", "g")
+                existing = await db.execute(
+                    select(Users).where(
+                        Users.role == UserRole.STUDENT.value,
+                        Users.email.like(f"seed.specialist.{group_slug}.%@example.com"),
                     )
-                    db.add(ach)
-                    achievements_created += 1
+                )
+                already = len(existing.scalars().all())
+                remaining = STUDENTS_PER_GROUP - already
+                if remaining <= 0:
+                    print(f"   Skipping {group} (already {already} seeded)")
+                    continue
 
-            await db.commit()
-            print(f"   {edu.value}: done")
+                print(f"   Seeding {remaining} students for {group}...")
+                for i in range(already + 1, already + remaining + 1):
+                    is_female = random.random() < 0.5
+                    if is_female:
+                        first = random.choice(FIRST_NAMES_F)
+                        last = random.choice(LAST_NAMES_F)
+                    else:
+                        first = random.choice(FIRST_NAMES_M)
+                        last = random.choice(LAST_NAMES_M)
+
+                    student = Users(
+                        email=f"seed.specialist.{group_slug}.{i:03d}@example.com",
+                        hashed_password=hashed,
+                        first_name=first,
+                        last_name=last,
+                        role=UserRole.STUDENT.value,
+                        status=UserStatus.ACTIVE.value,
+                        education_level=EducationLevel.SPECIALIST.value,
+                        course=course,
+                        study_group=group,
+                        is_active=True,
+                        created_at=now - timedelta(days=random.randint(30, 365)),
+                    )
+                    db.add(student)
+                    await db.flush()
+                    students_created += 1
+
+                    for _ in range(random.randint(1, 8)):
+                        cat = random.choice(CATEGORIES)
+                        level = random.choice(LEVELS)
+                        ach_status = random.choice(STATUSES_WEIGHTED)
+                        lo, hi = POINTS_BY_LEVEL[level]
+                        points = random.randint(lo, hi) if ach_status == AchievementStatus.APPROVED else 0
+
+                        filename = f"seed_{student.id}_{achievements_created + 1}.pdf"
+                        _make_stub_file(upload_dir, filename)
+
+                        ach = Achievement(
+                            user_id=student.id,
+                            title=random.choice(ACHIEVEMENT_TITLES[cat]),
+                            description=DESCRIPTIONS[cat],
+                            file_path=f"achievements/{filename}",
+                            category=cat.name,
+                            level=level.name,
+                            points=points,
+                            status=ach_status.name,
+                            moderator_id=moderator_id if ach_status != AchievementStatus.PENDING else None,
+                            created_at=now - timedelta(days=random.randint(1, 300)),
+                        )
+                        db.add(ach)
+                        achievements_created += 1
+
+                await db.commit()
+                print(f"   {group}: done")
 
         print(f"   Total created: {students_created} students, {achievements_created} achievements")
         print("   All student passwords: Password123!")

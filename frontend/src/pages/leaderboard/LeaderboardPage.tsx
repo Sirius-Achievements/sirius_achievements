@@ -50,7 +50,7 @@ function leagueDescription(data: LeaderboardResponse | null, isStaff: boolean) {
 }
 
 function buildUserLink(row: LeaderboardRow, isStaff: boolean) {
-  return isStaff ? `/users/${row.user.id}` : `/students/${row.user.id}`
+  return isStaff ? `/users/${row.user.id}?from=leaderboard` : `/students/${row.user.id}`
 }
 
 export function LeaderboardPage() {

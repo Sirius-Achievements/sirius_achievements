@@ -42,11 +42,8 @@ function achievementStatusLabel(status: string) {
 }
 
 function statusClass(status: string) {
-  if (status === 'approved') return 'bg-green-50 text-green-700 border-green-200'
-  if (status === 'pending') return 'bg-yellow-50 text-yellow-700 border-yellow-200'
-  if (status === 'revision') return 'bg-yellow-100 text-yellow-800 border-yellow-300'
-  if (status === 'rejected') return 'bg-red-50 text-red-700 border-red-200'
-  return 'bg-slate-100 text-slate-500 border-slate-200'
+  if (['approved', 'pending', 'revision', 'rejected'].includes(status)) return 'bg-indigo-50 text-indigo-700 border-indigo-200'
+  return 'bg-indigo-50 text-indigo-600 border-indigo-100'
 }
 
 export function UserDetailPage() {
@@ -560,6 +557,7 @@ export function UserDetailPage() {
           {detail.user.role === 'STUDENT' && detail.user.status === 'active' ? <Link to={`/students/${detail.user.id}`} className="inline-flex items-center text-sm text-slate-500 hover:text-indigo-600 transition-colors bg-surface border border-slate-200 px-3 py-1.5 rounded-lg">Публичный профиль</Link> : null}
           {isAdminViewer && !readOnlyStaff ? <button type="button" onClick={() => setSupportModalOpen(true)} className="inline-flex items-center text-sm text-slate-500 hover:text-indigo-600 transition-colors bg-surface border border-slate-200 px-3 py-1.5 rounded-lg">Написать</button> : null}
           <button type="button" onClick={() => void handleExportPdf()} className="inline-flex items-center text-sm text-slate-500 hover:text-indigo-600 transition-colors bg-surface border border-slate-200 px-3 py-1.5 rounded-lg">{isExportingPdf ? 'PDF...' : 'PDF'}</button>
+          {isAdminViewer && !readOnlyStaff ? detail.user.status === 'deleted' ? <button type="button" onClick={() => void handleRestoreUser()} disabled={isRestoringUser} className="inline-flex items-center text-sm text-indigo-600 hover:text-indigo-700 transition-colors bg-surface border border-indigo-200 px-3 py-1.5 rounded-lg disabled:opacity-60">{isRestoringUser ? 'Восстановление...' : 'Восстановить'}</button> : <button type="button" onClick={() => void handleDeleteUser()} className="inline-flex items-center text-sm text-slate-500 hover:text-indigo-600 transition-colors bg-surface border border-slate-200 px-3 py-1.5 rounded-lg">Удалить</button> : null}
           <Link to={backUrl} className="text-sm text-slate-500 hover:text-indigo-600 flex items-center transition-colors">Назад</Link>
         </div>
       </div>
@@ -577,7 +575,7 @@ export function UserDetailPage() {
             <p className="text-xs text-slate-500 mb-3">{detail.user.email}</p>
             <div className="flex flex-wrap justify-center gap-2 mb-4">
               <span className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded bg-slate-100 text-slate-600 border border-slate-200">{roleLabel(detail.user.role)}</span>
-              <span className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded border ${detail.user.status === 'active' ? 'bg-green-50 text-green-700 border-green-200' : detail.user.status === 'deleted' || detail.user.status === 'rejected' ? 'bg-red-50 text-red-700 border-red-200' : 'bg-yellow-50 text-yellow-700 border-yellow-200'}`}>{userStatusLabel(detail.user.status)}</span>
+              <span className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded border bg-indigo-50 text-indigo-700 border-indigo-200">{userStatusLabel(detail.user.status)}</span>
             </div>
 
             {currentUser?.role === 'SUPER_ADMIN' && currentUser.id !== detail.user.id ? (
@@ -688,15 +686,6 @@ export function UserDetailPage() {
           <div className="bg-surface rounded-xl border border-slate-200 overflow-hidden shadow-sm">
             <div className="px-5 py-3 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
               <h3 className="text-sm font-bold text-slate-700">Документы текущего сезона</h3>
-              {readOnlyStaff ? null : detail.user.status === 'deleted' ? (
-                <button type="button" onClick={() => void handleRestoreUser()} disabled={isRestoringUser} className="text-xs font-medium text-green-600 hover:text-green-700 transition-colors disabled:cursor-not-allowed disabled:opacity-60">
-                  {isRestoringUser ? 'Восстановление...' : 'Восстановить пользователя'}
-                </button>
-              ) : (
-                <button type="button" onClick={() => void handleDeleteUser()} className="text-xs font-medium text-slate-400 hover:text-red-600 transition-colors">
-                  Удалить пользователя
-                </button>
-              )}
             </div>
             {detail.achievements.length ? (
               <ul className="divide-y divide-slate-100">
