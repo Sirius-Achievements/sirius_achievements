@@ -1047,6 +1047,10 @@
   box-shadow: 0 0 0 0.35rem currentColor;
 }
 
+.notification-indicator {
+  background: var(--color-accent);
+}
+
 .toast--detailed {
   align-items: flex-start;
 }
@@ -1060,11 +1064,11 @@
 }
 
 .toast--success .toast__dot-wrap {
-  color: rgba(34, 197, 94, 0.18);
+  color: color-mix(in srgb, var(--color-accent) 20%, transparent);
 }
 
 .toast--success .toast__dot {
-  background: #22c55e;
+  background: var(--color-accent);
 }
 
 .toast--error .toast__dot-wrap {
@@ -1076,7 +1080,7 @@
 }
 
 .toast--info .toast__dot-wrap {
-  color: rgba(76, 189, 207, 0.2);
+  color: color-mix(in srgb, var(--color-accent) 20%, transparent);
 }
 
 .toast--info .toast__dot {

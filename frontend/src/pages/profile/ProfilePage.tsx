@@ -7,12 +7,14 @@ import { usersApi } from '@/api/users'
 import { DocumentPreviewImage } from '@/components/ui/DocumentPreviewImage'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { useAuth } from '@/hooks/useAuth'
+import { useTheme } from '@/hooks/useTheme'
 import { useToast } from '@/hooks/useToast'
 import { UserRole } from '@/types/enums'
 import { isImageFile, isPdfFile } from '@/utils/documentPreview'
 import { getErrorMessage } from '@/utils/http'
 import { courseLabel } from '@/utils/labels'
 import { buildMediaUrl } from '@/utils/media'
+import { getChartThemeColors } from '@/utils/chartTheme'
 
 Chart.register(...registerables)
 
@@ -57,6 +59,8 @@ function docStatusBadge(status: string, points?: number) {
 export function ProfilePage() {
   const navigate = useNavigate()
   const { user, refreshProfile, logout, setCurrentUser } = useAuth()
+  const { theme } = useTheme()
+  const chartColors = getChartThemeColors(theme)
   const { pushToast } = useToast()
 
   const [profile, setProfile] = useState<ProfileResponse | null>(null)
@@ -169,6 +173,7 @@ export function ProfilePage() {
     if (chartInstanceRef.current) chartInstanceRef.current.destroy()
 
     const font = { family: "'Inter', system-ui, sans-serif", size: 11 }
+    const colors = getChartThemeColors(theme)
     chartInstanceRef.current = new Chart(chartRef.current, {
       type: 'line',
       data: {
@@ -177,13 +182,13 @@ export function ProfilePage() {
           {
             label: 'Баллы (накопительно)',
             data: profile.chart_cumulative,
-            borderColor: '#6366f1',
-            backgroundColor: 'rgba(99, 102, 241, 0.06)',
+            borderColor: colors.accent,
+            backgroundColor: colors.accentSoft,
             fill: true,
             borderWidth: 2.5,
             tension: 0.35,
-            pointBackgroundColor: '#fff',
-            pointBorderColor: '#6366f1',
+            pointBackgroundColor: colors.pointBackground,
+            pointBorderColor: colors.accent,
             pointBorderWidth: 2,
             pointRadius: 4,
             pointHoverRadius: 7,
@@ -192,14 +197,14 @@ export function ProfilePage() {
           {
             label: 'Баллы за месяц',
             data: profile.chart_points,
-            borderColor: '#a78bfa',
-            backgroundColor: 'rgba(167, 139, 250, 0.06)',
+            borderColor: colors.accentStrong,
+            backgroundColor: colors.accentStrongSoft,
             fill: true,
             borderWidth: 2,
             borderDash: [5, 3],
             tension: 0.35,
-            pointBackgroundColor: '#fff',
-            pointBorderColor: '#a78bfa',
+            pointBackgroundColor: colors.pointBackground,
+            pointBorderColor: colors.accentStrong,
             pointBorderWidth: 2,
             pointRadius: 3,
             pointHoverRadius: 6,
@@ -208,13 +213,13 @@ export function ProfilePage() {
           {
             label: 'Загрузки',
             data: profile.chart_uploads,
-            borderColor: '#10b981',
-            backgroundColor: 'rgba(16, 185, 129, 0.06)',
+            borderColor: colors.accentMuted,
+            backgroundColor: colors.accentMutedSoft,
             fill: true,
             borderWidth: 2,
             tension: 0.35,
-            pointBackgroundColor: '#fff',
-            pointBorderColor: '#10b981',
+            pointBackgroundColor: colors.pointBackground,
+            pointBorderColor: colors.accentMuted,
             pointBorderWidth: 2,
             pointRadius: 3,
             pointHoverRadius: 6,
@@ -229,10 +234,10 @@ export function ProfilePage() {
         plugins: {
           legend: {
             position: 'bottom',
-            labels: { font, usePointStyle: true, pointStyle: 'circle', padding: 20, boxWidth: 8, boxHeight: 8 },
+            labels: { font, color: colors.textMuted, usePointStyle: true, pointStyle: 'circle', padding: 20, boxWidth: 8, boxHeight: 8 },
           },
           tooltip: {
-            backgroundColor: '#1e293b',
+            backgroundColor: colors.tooltip,
             titleFont: { ...font, weight: 'bold' },
             bodyFont: font,
             padding: 12,
@@ -251,20 +256,20 @@ export function ProfilePage() {
           y: {
             beginAtZero: true,
             position: 'left',
-            grid: { color: '#f1f5f9' },
-            ticks: { font, color: '#94a3b8' },
-            title: { display: true, text: 'Баллы', font: { ...font, size: 10 }, color: '#94a3b8' },
+            grid: { color: colors.grid },
+            ticks: { font, color: colors.textFaint },
+            title: { display: true, text: 'Баллы', font: { ...font, size: 10 }, color: colors.textFaint },
           },
           y1: {
             beginAtZero: true,
             position: 'right',
             grid: { drawOnChartArea: false },
-            ticks: { font, color: '#10b981', stepSize: 1 },
-            title: { display: true, text: 'Документы', font: { ...font, size: 10 }, color: '#10b981' },
+            ticks: { font, color: colors.accentMuted, stepSize: 1 },
+            title: { display: true, text: 'Документы', font: { ...font, size: 10 }, color: colors.accentMuted },
           },
           x: {
             grid: { display: false },
-            ticks: { font, color: '#64748b' },
+            ticks: { font, color: colors.textMuted },
           },
         },
       },
@@ -274,21 +279,10 @@ export function ProfilePage() {
       chartInstanceRef.current?.destroy()
       chartInstanceRef.current = null
     }
-  }, [profile, isStudent])
+  }, [profile, isStudent, theme])
 
   // Radar chart by category (approved docs) — one dataset per category, toggle support
   const RADAR_CATS = ['Спорт', 'Наука', 'Искусство', 'Волонтёрство', 'Хакатон', 'Патриотизм', 'Проекты', 'Другое']
-  const RADAR_COLORS = [
-    { border: '#6366f1', bg: 'rgba(99,102,241,0.18)' },   // Спорт — indigo
-    { border: '#3b82f6', bg: 'rgba(59,130,246,0.18)' },   // Наука — blue
-    { border: '#ec4899', bg: 'rgba(236,72,153,0.18)' },   // Искусство — pink
-    { border: '#10b981', bg: 'rgba(16,185,129,0.18)' },   // Волонтёрство — emerald
-    { border: '#f59e0b', bg: 'rgba(245,158,11,0.18)' },   // Хакатон — amber
-    { border: '#ef4444', bg: 'rgba(239,68,68,0.18)' },    // Патриотизм — red
-    { border: '#8b5cf6', bg: 'rgba(139,92,246,0.18)' },   // Проекты — violet
-    { border: '#64748b', bg: 'rgba(100,116,139,0.18)' },  // Другое — slate
-  ]
-
   useEffect(() => {
     if (!profile || !isStudent || !radarChartRef.current) return
     const pointsMap: Record<string, number> = {}
@@ -303,6 +297,7 @@ export function ProfilePage() {
 
     const font = { family: "'Inter', system-ui, sans-serif", size: 10 }
     const maxVal = Math.max(...RADAR_CATS.map((c) => pointsMap[c] ?? 0))
+    const colors = getChartThemeColors(theme)
 
     radarInstanceRef.current?.destroy()
     radarInstanceRef.current = new Chart(radarChartRef.current, {
@@ -315,14 +310,14 @@ export function ProfilePage() {
             const value = pointsMap[cat] ?? 0
             return hiddenCats.has(cat) || value <= 0 ? null : value
           }),
-          borderColor: '#8b5cf6',
-          backgroundColor: 'rgba(124, 58, 237, 0.62)',
+          borderColor: colors.accent,
+          backgroundColor: colors.accentSoft,
           fill: true,
           spanGaps: true,
           tension: 0,
           borderWidth: 2,
-          pointBackgroundColor: '#8b5cf6',
-          pointBorderColor: '#ddd6fe',
+          pointBackgroundColor: colors.accentStrong,
+          pointBorderColor: colors.pointBackground,
           pointBorderWidth: 1,
           pointRadius: RADAR_CATS.map((cat) => !hiddenCats.has(cat) && (pointsMap[cat] ?? 0) > 0 ? 3 : 0),
           pointHoverRadius: RADAR_CATS.map((cat) => !hiddenCats.has(cat) && (pointsMap[cat] ?? 0) > 0 ? 5 : 0),
@@ -334,7 +329,7 @@ export function ProfilePage() {
         plugins: {
           legend: { display: false },
           tooltip: {
-            backgroundColor: '#1e293b',
+            backgroundColor: colors.tooltip,
             titleFont: { ...font, weight: 'bold' as const },
             bodyFont: font,
             padding: 10,
@@ -350,10 +345,10 @@ export function ProfilePage() {
         scales: {
           r: {
             beginAtZero: true,
-            ticks: { font, color: '#94a3b8', backdropColor: 'transparent', stepSize: Math.max(1, Math.ceil(maxVal / 4)) },
-            pointLabels: { font: { ...font, size: 11 }, color: '#475569' },
-            grid: { color: '#e2e8f0' },
-            angleLines: { color: '#e2e8f0' },
+            ticks: { font, color: colors.textFaint, backdropColor: 'transparent', stepSize: Math.max(1, Math.ceil(maxVal / 4)) },
+            pointLabels: { font: { ...font, size: 11 }, color: colors.textMuted },
+            grid: { color: colors.grid },
+            angleLines: { color: colors.grid },
           },
         },
       },
@@ -362,7 +357,7 @@ export function ProfilePage() {
       radarInstanceRef.current?.destroy()
       radarInstanceRef.current = null
     }
-  }, [profile, isStudent, hiddenCats])
+  }, [profile, isStudent, hiddenCats, theme])
 
   // Cropper init when modal opens
   useEffect(() => {
@@ -1013,9 +1008,7 @@ export function ProfilePage() {
               </div>
               {activeCats.length > 0 && (
                 <div className="mt-4 flex flex-wrap gap-2">
-                  {activeCats.map((cat, _i) => {
-                    const idx = RADAR_CATS.indexOf(cat)
-                    const color = RADAR_COLORS[idx]
+                  {activeCats.map((cat) => {
                     const isHidden = hiddenCats.has(cat)
                     return (
                       <button
@@ -1029,9 +1022,9 @@ export function ProfilePage() {
                         })}
                         className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-all ${isHidden ? 'opacity-40 bg-slate-50 border-slate-200 text-slate-400' : 'bg-surface border-slate-200 text-slate-700'}`}
                       >
-                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: isHidden ? '#cbd5e1' : color.border }} />
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: isHidden ? chartColors.textFaint : chartColors.accent }} />
                         {cat}
-                        <span className="text-[10px] font-semibold ml-0.5" style={{ color: isHidden ? '#94a3b8' : color.border }}>
+                        <span className="text-[10px] font-semibold ml-0.5" style={{ color: isHidden ? chartColors.textFaint : chartColors.accentStrong }}>
                           {pointsMap[cat]} б.
                         </span>
                       </button>

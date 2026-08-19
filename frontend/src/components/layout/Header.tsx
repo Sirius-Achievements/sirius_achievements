@@ -83,7 +83,7 @@ export function Header({ user }: HeaderProps) {
               />
             </svg>
             {unreadCount > 0 ? (
-              <span className="absolute top-1.5 right-1.5 h-3 w-3 bg-indigo-600 rounded-full text-[8px] text-white flex items-center justify-center font-bold">
+              <span className="notification-indicator absolute top-1.5 right-1.5 h-3 w-3 rounded-full text-[8px] text-white flex items-center justify-center font-bold">
                 {unreadCount}
               </span>
             ) : null}

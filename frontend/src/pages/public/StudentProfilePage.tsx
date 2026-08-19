@@ -7,6 +7,8 @@ import { publicApi, PublicStudentResponse } from '@/api/public'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { ThemeToggle } from '@/components/ui/ThemeToggle'
 import { useAuth } from '@/hooks/useAuth'
+import { useTheme } from '@/hooks/useTheme'
+import { getChartThemeColors } from '@/utils/chartTheme'
 import { getErrorMessage } from '@/utils/http'
 import { courseLabel } from '@/utils/labels'
 import { buildMediaUrl } from '@/utils/media'
@@ -33,21 +35,12 @@ function isPdf(url?: string | null) {
 }
 
 const RADAR_CATS = ['Спорт', 'Наука', 'Искусство', 'Волонтёрство', 'Хакатон', 'Патриотизм', 'Проекты', 'Другое']
-const RADAR_COLORS = [
-  { border: '#6366f1', bg: 'rgba(99,102,241,0.18)' },
-  { border: '#3b82f6', bg: 'rgba(59,130,246,0.18)' },
-  { border: '#ec4899', bg: 'rgba(236,72,153,0.18)' },
-  { border: '#10b981', bg: 'rgba(16,185,129,0.18)' },
-  { border: '#f59e0b', bg: 'rgba(245,158,11,0.18)' },
-  { border: '#ef4444', bg: 'rgba(239,68,68,0.18)' },
-  { border: '#8b5cf6', bg: 'rgba(139,92,246,0.18)' },
-  { border: '#64748b', bg: 'rgba(100,116,139,0.18)' },
-]
-
 function StudentProfilePageInner() {
   const { id } = useParams<{ id: string }>()
   const studentId = Number(id)
   const { user: currentUser } = useAuth()
+  const { theme } = useTheme()
+  const chartColors = getChartThemeColors(theme)
   const isOwnProfile = currentUser?.id === studentId
   const isStaff = currentUser?.role === 'MODERATOR' || currentUser?.role === 'SUPER_ADMIN'
   const canViewDocs = isOwnProfile || isStaff
@@ -116,6 +109,7 @@ function StudentProfilePageInner() {
 
   useEffect(() => {
     if (!data) return
+    const colors = getChartThemeColors(theme)
 
     // Progress chart
     if (progressChartRef.current && data.chart_labels?.length) {
@@ -129,13 +123,13 @@ function StudentProfilePageInner() {
             {
               label: 'Баллы (накопительно)',
               data: data.chart_cumulative,
-              borderColor: '#6366f1',
-              backgroundColor: 'rgba(99, 102, 241, 0.06)',
+              borderColor: colors.accent,
+              backgroundColor: colors.accentSoft,
               fill: true,
               borderWidth: 2,
               tension: 0.35,
-              pointBackgroundColor: '#fff',
-              pointBorderColor: '#6366f1',
+              pointBackgroundColor: colors.pointBackground,
+              pointBorderColor: colors.accent,
               pointBorderWidth: 2,
               pointRadius: 3,
               pointHoverRadius: 6,
@@ -144,14 +138,14 @@ function StudentProfilePageInner() {
             {
               label: 'Баллы за месяц',
               data: data.chart_points,
-              borderColor: '#a78bfa',
-              backgroundColor: 'rgba(167, 139, 250, 0.06)',
+              borderColor: colors.accentStrong,
+              backgroundColor: colors.accentStrongSoft,
               fill: true,
               borderWidth: 1.5,
               borderDash: [5, 3],
               tension: 0.35,
-              pointBackgroundColor: '#fff',
-              pointBorderColor: '#a78bfa',
+              pointBackgroundColor: colors.pointBackground,
+              pointBorderColor: colors.accentStrong,
               pointBorderWidth: 1.5,
               pointRadius: 2.5,
               pointHoverRadius: 5,
@@ -160,13 +154,13 @@ function StudentProfilePageInner() {
             {
               label: 'Загрузки',
               data: data.chart_uploads,
-              borderColor: '#10b981',
-              backgroundColor: 'rgba(16, 185, 129, 0.06)',
+              borderColor: colors.accentMuted,
+              backgroundColor: colors.accentMutedSoft,
               fill: true,
               borderWidth: 1.5,
               tension: 0.35,
-              pointBackgroundColor: '#fff',
-              pointBorderColor: '#10b981',
+              pointBackgroundColor: colors.pointBackground,
+              pointBorderColor: colors.accentMuted,
               pointBorderWidth: 1.5,
               pointRadius: 2.5,
               pointHoverRadius: 5,
@@ -179,13 +173,13 @@ function StudentProfilePageInner() {
           maintainAspectRatio: false,
           interaction: { mode: 'index', intersect: false },
           plugins: {
-            legend: { position: 'bottom', labels: { font, usePointStyle: true, pointStyle: 'circle', padding: 16, boxWidth: 8, boxHeight: 8 } },
-            tooltip: { backgroundColor: '#1e293b', titleFont: { ...font, weight: 'bold' }, bodyFont: font, padding: 10, cornerRadius: 8, boxPadding: 4 },
+            legend: { position: 'bottom', labels: { font, color: colors.textMuted, usePointStyle: true, pointStyle: 'circle', padding: 16, boxWidth: 8, boxHeight: 8 } },
+            tooltip: { backgroundColor: colors.tooltip, titleFont: { ...font, weight: 'bold' }, bodyFont: font, padding: 10, cornerRadius: 8, boxPadding: 4 },
           },
           scales: {
-            y: { beginAtZero: true, position: 'left', grid: { color: '#f1f5f9' }, ticks: { font, color: '#94a3b8' }, title: { display: true, text: 'Баллы', font: { ...font, size: 9 }, color: '#94a3b8' } },
-            y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, ticks: { font, color: '#10b981', stepSize: 1 }, title: { display: true, text: 'Документы', font: { ...font, size: 9 }, color: '#10b981' } },
-            x: { grid: { display: false }, ticks: { font, color: '#64748b' } },
+            y: { beginAtZero: true, position: 'left', grid: { color: colors.grid }, ticks: { font, color: colors.textFaint }, title: { display: true, text: 'Баллы', font: { ...font, size: 9 }, color: colors.textFaint } },
+            y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, ticks: { font, color: colors.accentMuted, stepSize: 1 }, title: { display: true, text: 'Документы', font: { ...font, size: 9 }, color: colors.accentMuted } },
+            x: { grid: { display: false }, ticks: { font, color: colors.textMuted } },
           },
         },
       })
@@ -195,11 +189,12 @@ function StudentProfilePageInner() {
       progressInstanceRef.current?.destroy()
       progressInstanceRef.current = null
     }
-  }, [data])
+  }, [data, theme])
 
   // Radar chart — rebuild when data or hiddenCats changes
   useEffect(() => {
     if (!radarChartRef.current || !data?.achievements?.length) return
+    const colors = getChartThemeColors(theme)
     const pointsMap: Record<string, number> = {}
     for (const cat of RADAR_CATS) pointsMap[cat] = 0
     for (const a of data.achievements) {
@@ -222,14 +217,14 @@ function StudentProfilePageInner() {
             const value = pointsMap[cat] ?? 0
             return hiddenCats.has(cat) || value <= 0 ? null : value
           }),
-          borderColor: '#8b5cf6',
-          backgroundColor: 'rgba(124, 58, 237, 0.62)',
+          borderColor: colors.accent,
+          backgroundColor: colors.accentSoft,
           fill: true,
           spanGaps: true,
           tension: 0,
           borderWidth: 2,
-          pointBackgroundColor: '#8b5cf6',
-          pointBorderColor: '#ddd6fe',
+          pointBackgroundColor: colors.accentStrong,
+          pointBorderColor: colors.pointBackground,
           pointBorderWidth: 1,
           pointRadius: RADAR_CATS.map((cat) => !hiddenCats.has(cat) && (pointsMap[cat] ?? 0) > 0 ? 3 : 0),
           pointHoverRadius: RADAR_CATS.map((cat) => !hiddenCats.has(cat) && (pointsMap[cat] ?? 0) > 0 ? 5 : 0),
@@ -241,7 +236,7 @@ function StudentProfilePageInner() {
         plugins: {
           legend: { display: false },
           tooltip: {
-            backgroundColor: '#1e293b',
+            backgroundColor: colors.tooltip,
             titleFont: { ...font, weight: 'bold' as const },
             bodyFont: font,
             padding: 10,
@@ -252,10 +247,10 @@ function StudentProfilePageInner() {
         scales: {
           r: {
             beginAtZero: true,
-            ticks: { font, color: '#94a3b8', backdropColor: 'transparent', stepSize: Math.max(1, Math.ceil(maxVal / 4)) },
-            pointLabels: { font: { ...font, size: 11 }, color: '#475569' },
-            grid: { color: '#e2e8f0' },
-            angleLines: { color: '#e2e8f0' },
+            ticks: { font, color: colors.textFaint, backdropColor: 'transparent', stepSize: Math.max(1, Math.ceil(maxVal / 4)) },
+            pointLabels: { font: { ...font, size: 11 }, color: colors.textMuted },
+            grid: { color: colors.grid },
+            angleLines: { color: colors.grid },
           },
         },
       },
@@ -264,7 +259,7 @@ function StudentProfilePageInner() {
       radarInstanceRef.current?.destroy()
       radarInstanceRef.current = null
     }
-  }, [data, hiddenCats])
+  }, [data, hiddenCats, theme])
 
   const handleBack = () => {
     if (window.history.length > 1) {
@@ -434,8 +429,6 @@ function StudentProfilePageInner() {
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2">
                   {activeCats.map((cat) => {
-                    const idx = RADAR_CATS.indexOf(cat)
-                    const color = RADAR_COLORS[idx]
                     const isHidden = hiddenCats.has(cat)
                     return (
                       <button
@@ -449,9 +442,9 @@ function StudentProfilePageInner() {
                         })}
                         className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-all ${isHidden ? 'opacity-40 bg-slate-50 border-slate-200 text-slate-400' : 'bg-surface border-slate-200 text-slate-700'}`}
                       >
-                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: isHidden ? '#cbd5e1' : color.border }} />
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: isHidden ? chartColors.textFaint : chartColors.accent }} />
                         {cat}
-                        <span className="text-[10px] font-semibold ml-0.5" style={{ color: isHidden ? '#94a3b8' : color.border }}>
+                        <span className="text-[10px] font-semibold ml-0.5" style={{ color: isHidden ? chartColors.textFaint : chartColors.accentStrong }}>
                           {pointsMap[cat]} б.
                         </span>
                       </button>

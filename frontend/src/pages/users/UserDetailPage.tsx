@@ -6,6 +6,7 @@ import { documentsApi } from '@/api/documents'
 import { usersApi } from '@/api/users'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { useAuth } from '@/hooks/useAuth'
+import { useTheme } from '@/hooks/useTheme'
 import { useToast } from '@/hooks/useToast'
 import { AchievementStatus } from '@/types/enums'
 import { UserDetailResponse, UserNote } from '@/types/user'
@@ -13,19 +14,9 @@ import { openDocumentPreview } from '@/utils/documentPreview'
 import { getErrorMessage } from '@/utils/http'
 import { courseLabel, coursesForEducationLevel, groupsForEducationLevel, roleLabel, userStatusLabel } from '@/utils/labels'
 import { buildMediaUrl } from '@/utils/media'
+import { getChartThemeColors } from '@/utils/chartTheme'
 
 const RADAR_CATS = ['Спорт', 'Наука', 'Искусство', 'Волонтёрство', 'Хакатон', 'Патриотизм', 'Проекты', 'Другое']
-const RADAR_COLORS = [
-  { border: '#6366f1', bg: 'rgba(99,102,241,0.18)' },
-  { border: '#3b82f6', bg: 'rgba(59,130,246,0.18)' },
-  { border: '#ec4899', bg: 'rgba(236,72,153,0.18)' },
-  { border: '#10b981', bg: 'rgba(16,185,129,0.18)' },
-  { border: '#f59e0b', bg: 'rgba(245,158,11,0.18)' },
-  { border: '#ef4444', bg: 'rgba(239,68,68,0.18)' },
-  { border: '#8b5cf6', bg: 'rgba(139,92,246,0.18)' },
-  { border: '#64748b', bg: 'rgba(100,116,139,0.18)' },
-]
-
 function achievementStatusLabel(status: string) {
   switch (status) {
     case AchievementStatus.APPROVED:
@@ -50,6 +41,8 @@ export function UserDetailPage() {
   const { id } = useParams<{ id: string }>()
   const userId = Number(id)
   const { user: currentUser } = useAuth()
+  const { theme } = useTheme()
+  const chartColors = getChartThemeColors(theme)
   const location = useLocation()
   const { pushToast } = useToast()
   const chartRef = useRef<HTMLCanvasElement | null>(null)
@@ -168,6 +161,8 @@ export function UserDetailPage() {
   useEffect(() => {
     if (!detail || !chartRef.current || !detail.chart_labels.length) return
 
+    const colors = getChartThemeColors(theme)
+
     chartInstanceRef.current?.destroy()
     chartInstanceRef.current = new Chart(chartRef.current, {
       type: 'line',
@@ -177,26 +172,26 @@ export function UserDetailPage() {
           {
             label: 'Баллы',
             data: detail.chart_points,
-            borderColor: '#4f46e5',
-            backgroundColor: 'rgba(79, 70, 229, 0.08)',
+            borderColor: colors.accent,
+            backgroundColor: colors.accentSoft,
             fill: true,
             tension: 0.3,
             borderWidth: 2,
-            pointBackgroundColor: '#fff',
-            pointBorderColor: '#4f46e5',
+            pointBackgroundColor: colors.pointBackground,
+            pointBorderColor: colors.accent,
             pointRadius: 3,
             pointHoverRadius: 6,
           },
           {
             label: 'Документов',
             data: detail.chart_counts,
-            borderColor: '#10b981',
-            backgroundColor: 'rgba(16, 185, 129, 0.06)',
+            borderColor: colors.accentStrong,
+            backgroundColor: colors.accentStrongSoft,
             fill: true,
             tension: 0.3,
             borderWidth: 2,
-            pointBackgroundColor: '#fff',
-            pointBorderColor: '#10b981',
+            pointBackgroundColor: colors.pointBackground,
+            pointBorderColor: colors.accentStrong,
             pointRadius: 3,
             pointHoverRadius: 6,
           },
@@ -205,10 +200,10 @@ export function UserDetailPage() {
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        plugins: { legend: { labels: { font: { size: 11 }, usePointStyle: true, padding: 16 } }, tooltip: { padding: 10, cornerRadius: 8 } },
+        plugins: { legend: { labels: { font: { size: 11 }, color: colors.textMuted, usePointStyle: true, padding: 16 } }, tooltip: { padding: 10, cornerRadius: 8, backgroundColor: colors.tooltip } },
         scales: {
-          y: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { font: { size: 11 }, color: '#94a3b8', stepSize: 1 } },
-          x: { grid: { display: false }, ticks: { font: { size: 11 }, color: '#64748b' } },
+          y: { beginAtZero: true, grid: { color: colors.grid }, ticks: { font: { size: 11 }, color: colors.textFaint, stepSize: 1 } },
+          x: { grid: { display: false }, ticks: { font: { size: 11 }, color: colors.textMuted } },
         },
       },
     })
@@ -217,10 +212,11 @@ export function UserDetailPage() {
       chartInstanceRef.current?.destroy()
       chartInstanceRef.current = null
     }
-  }, [detail, isLoading])
+  }, [detail, isLoading, theme])
 
   useEffect(() => {
     if (!radarChartRef.current || !detail?.achievements?.length) return
+    const colors = getChartThemeColors(theme)
     const pointsMap: Record<string, number> = {}
     for (const cat of RADAR_CATS) pointsMap[cat] = 0
     for (const a of detail.achievements) {
@@ -241,14 +237,14 @@ export function UserDetailPage() {
             const value = pointsMap[cat] ?? 0
             return hiddenCats.has(cat) || value <= 0 ? null : value
           }),
-          borderColor: '#8b5cf6',
-          backgroundColor: 'rgba(124, 58, 237, 0.62)',
+          borderColor: colors.accent,
+          backgroundColor: colors.accentSoft,
           fill: true,
           spanGaps: true,
           tension: 0,
           borderWidth: 2,
-          pointBackgroundColor: '#8b5cf6',
-          pointBorderColor: '#ddd6fe',
+          pointBackgroundColor: colors.accentStrong,
+          pointBorderColor: colors.pointBackground,
           pointBorderWidth: 1,
           pointRadius: RADAR_CATS.map((cat) => !hiddenCats.has(cat) && (pointsMap[cat] ?? 0) > 0 ? 3 : 0),
           pointHoverRadius: RADAR_CATS.map((cat) => !hiddenCats.has(cat) && (pointsMap[cat] ?? 0) > 0 ? 5 : 0),
@@ -260,7 +256,7 @@ export function UserDetailPage() {
         plugins: {
           legend: { display: false },
           tooltip: {
-            backgroundColor: '#1e293b',
+            backgroundColor: colors.tooltip,
             titleFont: { ...font, weight: 'bold' as const },
             bodyFont: font,
             padding: 10,
@@ -271,10 +267,10 @@ export function UserDetailPage() {
         scales: {
           r: {
             beginAtZero: true,
-            ticks: { font, color: '#94a3b8', backdropColor: 'transparent', stepSize: Math.max(1, Math.ceil(maxVal / 4)) },
-            pointLabels: { font: { ...font, size: 11 }, color: '#475569' },
-            grid: { color: '#e2e8f0' },
-            angleLines: { color: '#e2e8f0' },
+            ticks: { font, color: colors.textFaint, backdropColor: 'transparent', stepSize: Math.max(1, Math.ceil(maxVal / 4)) },
+            pointLabels: { font: { ...font, size: 11 }, color: colors.textMuted },
+            grid: { color: colors.grid },
+            angleLines: { color: colors.grid },
           },
         },
       },
@@ -283,7 +279,7 @@ export function UserDetailPage() {
       radarInstanceRef.current?.destroy()
       radarInstanceRef.current = null
     }
-  }, [detail, hiddenCats, isLoading])
+  }, [detail, hiddenCats, isLoading, theme])
 
   const handleRoleSave = async () => {
     setIsSavingRole(true)
@@ -521,7 +517,6 @@ export function UserDetailPage() {
         <div className="h-56"><canvas ref={radarChartRef} /></div>
         <div className="mt-3 flex flex-wrap gap-2">
           {activeCats.map((category) => {
-            const color = RADAR_COLORS[RADAR_CATS.indexOf(category)]
             const isHidden = hiddenCats.has(category)
             return (
               <button key={category} type="button" onClick={() => setHiddenCats((previous) => {
@@ -530,9 +525,9 @@ export function UserDetailPage() {
                 else next.add(category)
                 return next
               })} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-all ${isHidden ? 'opacity-40 bg-slate-50 border-slate-200 text-slate-400' : 'bg-surface border-slate-200 text-slate-700'}`}>
-                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: isHidden ? '#cbd5e1' : color.border }} />
+                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: isHidden ? chartColors.textFaint : chartColors.accent }} />
                 {category}
-                <span className="text-[10px] font-semibold ml-0.5" style={{ color: isHidden ? '#94a3b8' : color.border }}>{pointsMap[category]} б.</span>
+                <span className="text-[10px] font-semibold ml-0.5" style={{ color: isHidden ? chartColors.textFaint : chartColors.accentStrong }}>{pointsMap[category]} б.</span>
               </button>
             )
           })}

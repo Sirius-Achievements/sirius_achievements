@@ -351,6 +351,10 @@ html[data-theme="dark"] .bg-indigo-500 {
   background-color: var(--theme-accent) !important;
 }
 
+html[data-theme="dark"] .text-indigo-400 {
+  color: var(--theme-accent) !important;
+}
+
 html[data-theme="dark"] .from-indigo-500 {
   --tw-gradient-from: var(--theme-accent) !important;
   --tw-gradient-to: rgba(179, 66, 48, 0) !important;
