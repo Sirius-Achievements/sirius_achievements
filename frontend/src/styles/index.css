@@ -18,7 +18,7 @@
   --color-text-muted: #939191;
   --color-text-faint: #a3a3a3;
   --color-accent: #4cbdcf;
-  --color-accent-strong: #7814c8;
+  --color-accent-strong: #2f9fb0;
   --color-accent-soft: #eff9fa;
   --color-accent-soft-strong: #d6f0f3;
   --color-success-soft: #eff9fa;
@@ -106,7 +106,7 @@
     line-height: 1.5;
     background:
       radial-gradient(circle at top left, rgba(76, 189, 207, 0.08), transparent 28%),
-      radial-gradient(circle at top right, rgba(120, 20, 200, 0.035), transparent 24%),
+      radial-gradient(circle at top right, rgba(47, 159, 176, 0.035), transparent 24%),
       var(--color-bg);
   }
 
