@@ -498,6 +498,41 @@ export function UserDetailPage() {
   if (isLoading) return <div className="py-16"><LoadingSpinner /></div>
   if (!detail) return null
 
+  const studentPortrait = detail.user.role === 'STUDENT' && detail.achievements.length ? (() => {
+    const pointsMap: Record<string, number> = {}
+    for (const cat of RADAR_CATS) pointsMap[cat] = 0
+    for (const achievement of detail.achievements) {
+      const category = achievement.category as string
+      if (category in pointsMap) pointsMap[category] = (pointsMap[category] ?? 0) + (achievement.points ?? 0)
+    }
+    const activeCats = RADAR_CATS.filter((category) => pointsMap[category] > 0)
+    if (!activeCats.length) return null
+    return (
+      <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-3">
+        <h4 className="mb-2 text-xs font-semibold text-slate-600">Портрет</h4>
+        <div className="h-56"><canvas ref={radarChartRef} /></div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {activeCats.map((category) => {
+            const color = RADAR_COLORS[RADAR_CATS.indexOf(category)]
+            const isHidden = hiddenCats.has(category)
+            return (
+              <button key={category} type="button" onClick={() => setHiddenCats((previous) => {
+                const next = new Set(previous)
+                if (next.has(category)) next.delete(category)
+                else next.add(category)
+                return next
+              })} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-all ${isHidden ? 'opacity-40 bg-slate-50 border-slate-200 text-slate-400' : 'bg-surface border-slate-200 text-slate-700'}`}>
+                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: isHidden ? '#cbd5e1' : color.border }} />
+                {category}
+                <span className="text-[10px] font-semibold ml-0.5" style={{ color: isHidden ? '#94a3b8' : color.border }}>{pointsMap[category]} б.</span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+    )
+  })() : null
+
   const openUserDocument = (item: UserDetailResponse['achievements'][number]) => {
     if (item.file_path) {
       openDocumentPreview(item.id, item.file_path)
@@ -616,9 +651,8 @@ export function UserDetailPage() {
               <div><span className="block text-slate-500 text-[11px]">Телефон</span><span className="block truncate font-medium text-slate-800">{detail.user.phone_number || 'Не указан'}</span></div>
               <div><span className="block text-slate-500 text-[11px]">Регистрация</span><span className="font-medium text-slate-800">{detail.user.created_at ? new Date(detail.user.created_at).toLocaleDateString('ru-RU') : 'Дата не указана'}</span></div>
             </div>
+            {isAdminViewer && detail.user.role === 'STUDENT' ? <div className="border-t border-slate-100 bg-slate-50/50 p-4"><div className="mb-2 flex items-center justify-between gap-2"><h3 className="text-sm font-bold text-slate-700">Средний балл сессии</h3><span className="text-[10px] text-slate-400">Влияет на рейтинг</span></div><div className="flex gap-2"><input type="text" value={gpa} onChange={(event) => setGpa(event.target.value)} placeholder="4.5" className="min-w-0 flex-1 px-3 py-2 bg-surface border border-slate-200 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all" /><button type="button" onClick={() => void handleGpaSave()} className="bg-indigo-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors" disabled={isSavingGpa}>Сохранить</button></div><p className="text-[10px] text-slate-400 mt-1.5">От 2.0 до 5.0</p></div> : null}
           </div>
-
-          {isAdminViewer && detail.user.role === 'STUDENT' ? <div className="bg-surface rounded-xl border border-slate-200 overflow-hidden shadow-sm"><div className="px-4 py-2.5 border-b border-slate-100"><h3 className="text-sm font-bold text-slate-700">Средний балл сессии</h3></div><div className="p-4"><div className="flex gap-2"><input type="text" value={gpa} onChange={(event) => setGpa(event.target.value)} placeholder="4.5" className="min-w-0 flex-1 px-3 py-2 bg-surface border border-slate-200 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all" /><button type="button" onClick={() => void handleGpaSave()} className="bg-indigo-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors" disabled={isSavingGpa}>Сохранить</button></div><p className="text-[10px] text-slate-400 mt-1.5">От 2.0 до 5.0 · влияет на рейтинг</p></div></div> : null}
         </div>
 
         {!isGuestOrPending || isAdminViewer ? <div className="space-y-5 xl:col-span-8">
@@ -710,7 +744,7 @@ export function UserDetailPage() {
             )}
           </div>
 
-          {detail.user.role === 'STUDENT' ? <div className="bg-surface rounded-xl border border-slate-200 p-5"><h3 className="text-sm font-semibold text-slate-700 mb-4">Динамика достижений</h3>{detail.chart_labels.length ? <div className="h-48"><canvas ref={chartRef} /></div> : <div className="text-center py-8 text-sm text-slate-400">Нет одобренных достижений для отображения графика</div>}</div> : null}
+          {detail.user.role === 'STUDENT' ? <section className="overflow-hidden rounded-xl border border-slate-200 bg-surface shadow-sm"><div className="border-b border-slate-100 px-5 py-3"><h3 className="text-sm font-semibold text-slate-700">Аналитика достижений</h3><p className="mt-0.5 text-xs text-slate-400">Динамика баллов и распределение по направлениям</p></div><div className="grid gap-4 p-4 lg:grid-cols-2"><div className="rounded-xl border border-slate-100 bg-slate-50/60 p-3"><h4 className="mb-2 text-xs font-semibold text-slate-600">Динамика</h4>{detail.chart_labels.length ? <div className="h-56"><canvas ref={chartRef} /></div> : <div className="flex h-56 items-center justify-center text-center text-sm text-slate-400">Нет одобренных достижений для отображения графика</div>}</div>{studentPortrait}</div></section> : null}
 
           {detail.user.role === 'STUDENT' ? (
           <div className="bg-surface rounded-xl border border-slate-200 overflow-hidden shadow-sm">
@@ -792,50 +826,6 @@ export function UserDetailPage() {
           </div>
           ) : null}
 
-          {detail.user.role === 'STUDENT' && detail.achievements.length ? (() => {
-            const pointsMap: Record<string, number> = {}
-            for (const cat of RADAR_CATS) pointsMap[cat] = 0
-            for (const a of detail.achievements) {
-              const cat = a.category as string
-              if (cat in pointsMap) pointsMap[cat] = (pointsMap[cat] ?? 0) + (a.points ?? 0)
-            }
-            const activeCats = RADAR_CATS.filter((c) => pointsMap[c] > 0)
-            if (!activeCats.length) return null
-            return (
-              <div className="bg-surface rounded-xl border border-slate-200 p-5">
-                <h3 className="text-sm font-semibold text-slate-700 mb-4">Портрет достижений</h3>
-                <div className="h-64">
-                  <canvas ref={radarChartRef} />
-                </div>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {activeCats.map((cat) => {
-                    const idx = RADAR_CATS.indexOf(cat)
-                    const color = RADAR_COLORS[idx]
-                    const isHidden = hiddenCats.has(cat)
-                    return (
-                      <button
-                        key={cat}
-                        type="button"
-                        onClick={() => setHiddenCats((prev) => {
-                          const next = new Set(prev)
-                          if (next.has(cat)) next.delete(cat)
-                          else next.add(cat)
-                          return next
-                        })}
-                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-all ${isHidden ? 'opacity-40 bg-slate-50 border-slate-200 text-slate-400' : 'bg-surface border-slate-200 text-slate-700'}`}
-                      >
-                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: isHidden ? '#cbd5e1' : color.border }} />
-                        {cat}
-                        <span className="text-[10px] font-semibold ml-0.5" style={{ color: isHidden ? '#94a3b8' : color.border }}>
-                          {pointsMap[cat]} б.
-                        </span>
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-            )
-          })() : null}
         </div> : null}
       </div>
 

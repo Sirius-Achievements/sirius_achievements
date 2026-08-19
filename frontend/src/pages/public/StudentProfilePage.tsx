@@ -278,7 +278,6 @@ function StudentProfilePageInner() {
   const hasChartData = Boolean(data.chart_labels?.length)
   const catStats = data.category_breakdown ?? []
   const topCategories = catStats.slice(0, 4)
-  const hasIntroChart = false
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8">
@@ -325,12 +324,6 @@ function StudentProfilePageInner() {
               <div className="text-2xl font-bold text-slate-700">{data.total_docs}</div>
               <div className="text-[11px] text-slate-500 uppercase tracking-wider">Достижений</div>
             </div>
-            {data.student.session_gpa ? (
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-center">
-                <div className="text-2xl font-bold text-slate-700">{data.student.session_gpa}</div>
-                <div className="text-[11px] text-slate-500 uppercase tracking-wider">Оценка</div>
-              </div>
-            ) : null}
             {data.group_rank ? (
               <div className="rounded-2xl border border-indigo-100 bg-indigo-50/70 px-4 py-3 text-center">
                 <div className="text-2xl font-bold text-indigo-500">#{data.group_rank}</div>
@@ -340,8 +333,8 @@ function StudentProfilePageInner() {
               </div>
             ) : null}
             {data.rank ? (
-              <div className="rounded-2xl border border-amber-100 bg-amber-50/70 px-4 py-3 text-center">
-                <div className="text-2xl font-bold text-amber-500">#{data.rank}</div>
+              <div className="rounded-2xl border border-indigo-100 bg-indigo-50/70 px-4 py-3 text-center">
+                <div className="text-2xl font-bold text-indigo-600">#{data.rank}</div>
                 <div className="text-[11px] text-slate-500 uppercase tracking-wider">
                   Глобально{data.global_total ? ` из ${data.global_total}` : ''}
                 </div>
@@ -351,11 +344,15 @@ function StudentProfilePageInner() {
         </div>
       </div>
 
-      <div className={`grid grid-cols-1 gap-4 ${hasIntroChart ? 'xl:grid-cols-12 xl:items-start' : ''}`}>
-        <div className={`grid gap-4 ${data.student.session_gpa ? 'xl:grid-cols-[minmax(0,1fr)_280px]' : ''} ${hasIntroChart ? 'xl:col-span-4' : ''}`}>
-          <div className="bg-surface rounded-2xl border border-slate-200 shadow-sm p-4">
-            <h3 className="text-sm font-semibold text-slate-700 mb-4">Сводка профиля</h3>
-            <div className={`grid grid-cols-2 gap-3 ${hasIntroChart ? 'xl:grid-cols-1' : 'xl:grid-cols-4'}`}>
+      <div className="space-y-4">
+        <section className="bg-surface rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
+            <h3 className="text-sm font-semibold text-slate-700">Профиль и успеваемость</h3>
+            {data.student.session_gpa ? <span className="text-xs font-medium text-indigo-600">Оценка модератора</span> : null}
+          </div>
+          <div className={`grid gap-4 p-4 ${data.student.session_gpa ? 'xl:grid-cols-[minmax(0,1fr)_260px]' : ''}`}>
+            <div>
+            <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
               <div className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
                 <div className="text-[11px] uppercase tracking-wider text-slate-400">Обучение</div>
                 <div className="mt-1 text-sm font-semibold text-slate-800">{data.student.education_level || 'Не указано'}</div>
@@ -386,10 +383,9 @@ function StudentProfilePageInner() {
                 </div>
               </div>
             ) : null}
-          </div>
-          {data.student.session_gpa ? (
-            <div className="bg-surface rounded-2xl border border-slate-200 shadow-sm p-4">
-              <h3 className="text-sm font-semibold text-slate-700 mb-3">Оценка модератора</h3>
+            </div>
+            {data.student.session_gpa ? (
+              <div className="border-t border-slate-100 pt-4 xl:border-l xl:border-t-0 xl:pl-4 xl:pt-0">
               <div className="space-y-3">
                 <div>
                   <div className="text-[11px] uppercase tracking-wider text-slate-400">Средний балл сессии</div>
@@ -400,21 +396,25 @@ function StudentProfilePageInner() {
                   <div className="mt-1 text-2xl font-bold text-indigo-700">+{data.gpa_bonus}</div>
                 </div>
               </div>
-            </div>
-          ) : null}
-        </div>
-
-        <div className="space-y-4">
-          {hasChartData ? (
-            <div className="bg-surface rounded-2xl border border-slate-200 shadow-sm p-4">
-              <h3 className="text-sm font-semibold text-slate-700 mb-3">Динамика достижений</h3>
-              <div className="h-56 w-full">
-                <canvas ref={progressChartRef} />
               </div>
-            </div>
-          ) : null}
+            ) : null}
+          </div>
+        </section>
 
-          {data.achievements?.length ? (() => {
+        {(hasChartData || data.achievements?.length) ? (
+          <section className="bg-surface rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="border-b border-slate-100 px-4 py-3">
+              <h3 className="text-sm font-semibold text-slate-700">Аналитика достижений</h3>
+              <p className="mt-0.5 text-xs text-slate-400">Динамика баллов и распределение по направлениям</p>
+            </div>
+            <div className="grid gap-4 p-4 lg:grid-cols-2">
+              {hasChartData ? (
+                <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-3">
+                  <h4 className="mb-2 text-xs font-semibold text-slate-600">Динамика</h4>
+                  <div className="h-56 w-full"><canvas ref={progressChartRef} /></div>
+                </div>
+              ) : null}
+              {data.achievements?.length ? (() => {
             const pointsMap: Record<string, number> = {}
             for (const cat of RADAR_CATS) pointsMap[cat] = 0
             for (const a of data.achievements) {
@@ -425,8 +425,8 @@ function StudentProfilePageInner() {
             const activeCats = RADAR_CATS.filter((c) => pointsMap[c] > 0)
             if (!activeCats.length) return null
             return (
-              <div className="bg-surface rounded-2xl border border-slate-200 shadow-sm p-4">
-                <h3 className="text-sm font-semibold text-slate-700 mb-4">Портрет достижений</h3>
+              <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-3">
+                <h4 className="mb-2 text-xs font-semibold text-slate-600">Портрет</h4>
                 <div className="h-56">
                   <canvas ref={radarChartRef} />
                 </div>
@@ -459,6 +459,9 @@ function StudentProfilePageInner() {
               </div>
             )
           })() : null}
+            </div>
+          </section>
+        ) : null}
 
           <div className="bg-surface rounded-2xl border border-slate-200 shadow-sm p-5">
             <h3 className="text-sm font-semibold text-slate-700 mb-4">Достижения ({data.total_docs})</h3>
@@ -498,7 +501,6 @@ function StudentProfilePageInner() {
               <p className="text-sm text-slate-400 text-center py-8">Нет одобренных достижений</p>
             )}
           </div>
-        </div>
       </div>
 
 

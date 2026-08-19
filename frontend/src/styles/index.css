@@ -21,12 +21,12 @@
   --color-accent-strong: #4338ca;
   --color-accent-soft: #eef2ff;
   --color-accent-soft-strong: #e0e7ff;
-  --color-success-soft: #e9f8f1;
-  --color-success-text: #178760;
-  --color-danger-soft: #fff0f4;
-  --color-danger-text: #cf476c;
-  --color-warning-soft: #fff6df;
-  --color-warning-text: #b97d12;
+  --color-success-soft: #eef2ff;
+  --color-success-text: #4338ca;
+  --color-danger-soft: #eef2ff;
+  --color-danger-text: #4338ca;
+  --color-warning-soft: #eef2ff;
+  --color-warning-text: #4338ca;
   --color-info-soft: #eef2ff;
   --color-info-text: #4338ca;
   --color-overlay: rgba(17, 24, 39, 0.34);
@@ -59,12 +59,12 @@
   --color-accent-strong: #a5b4fc;
   --color-accent-soft: #272a4d;
   --color-accent-soft-strong: #313663;
-  --color-success-soft: #183427;
-  --color-success-text: #84dfaa;
-  --color-danger-soft: #3d1e31;
-  --color-danger-text: #ff8db4;
-  --color-warning-soft: #3c2f19;
-  --color-warning-text: #f1ca73;
+  --color-success-soft: #272a4d;
+  --color-success-text: #a5b4fc;
+  --color-danger-soft: #272a4d;
+  --color-danger-text: #a5b4fc;
+  --color-warning-soft: #272a4d;
+  --color-warning-text: #a5b4fc;
   --color-info-soft: #1e213f;
   --color-info-text: #a5b4fc;
   --color-overlay: rgba(8, 10, 16, 0.72);
@@ -1307,6 +1307,45 @@
   to {
     transform: rotate(360deg);
   }
+}
+
+/* One visual language for application UI. Charts keep their inline data colours. */
+:where(
+  [class*="bg-green-"], [class*="bg-red-"], [class*="bg-rose-"], [class*="bg-orange-"], [class*="bg-amber-"], [class*="bg-yellow-"],
+  [class*="bg-lime-"], [class*="bg-emerald-"], [class*="bg-teal-"], [class*="bg-cyan-"], [class*="bg-sky-"], [class*="bg-blue-"],
+  [class*="bg-violet-"], [class*="bg-purple-"], [class*="bg-fuchsia-"], [class*="bg-pink-"]
+) {
+  background-color: var(--color-accent-soft) !important;
+  background-image: none !important;
+}
+
+:where(
+  [class*="text-green-"], [class*="text-red-"], [class*="text-rose-"], [class*="text-orange-"], [class*="text-amber-"], [class*="text-yellow-"],
+  [class*="text-lime-"], [class*="text-emerald-"], [class*="text-teal-"], [class*="text-cyan-"], [class*="text-sky-"], [class*="text-blue-"],
+  [class*="text-violet-"], [class*="text-purple-"], [class*="text-fuchsia-"], [class*="text-pink-"]
+) {
+  color: var(--color-accent) !important;
+}
+
+:where(
+  [class*="border-green-"], [class*="border-red-"], [class*="border-rose-"], [class*="border-orange-"], [class*="border-amber-"], [class*="border-yellow-"],
+  [class*="border-lime-"], [class*="border-emerald-"], [class*="border-teal-"], [class*="border-cyan-"], [class*="border-sky-"], [class*="border-blue-"],
+  [class*="border-violet-"], [class*="border-purple-"], [class*="border-fuchsia-"], [class*="border-pink-"]
+) {
+  border-color: var(--color-accent-soft-strong) !important;
+}
+
+:where(
+  [class*="fill-green-"], [class*="fill-red-"], [class*="fill-rose-"], [class*="fill-orange-"], [class*="fill-amber-"], [class*="fill-yellow-"],
+  [class*="fill-lime-"], [class*="fill-emerald-"], [class*="fill-teal-"], [class*="fill-cyan-"], [class*="fill-sky-"], [class*="fill-blue-"],
+  [class*="fill-violet-"], [class*="fill-purple-"], [class*="fill-fuchsia-"], [class*="fill-pink-"],
+  [class*="stroke-green-"], [class*="stroke-red-"], [class*="stroke-rose-"], [class*="stroke-orange-"], [class*="stroke-amber-"], [class*="stroke-yellow-"],
+  [class*="stroke-lime-"], [class*="stroke-emerald-"], [class*="stroke-teal-"], [class*="stroke-cyan-"], [class*="stroke-sky-"], [class*="stroke-blue-"],
+  [class*="stroke-violet-"], [class*="stroke-purple-"], [class*="stroke-fuchsia-"], [class*="stroke-pink-"]
+) {
+  color: var(--color-accent) !important;
+  fill: var(--color-accent) !important;
+  stroke: var(--color-accent) !important;
 }
 
 @media (max-width: 1080px) {
