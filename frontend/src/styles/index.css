@@ -1374,6 +1374,15 @@
   border-color: var(--color-accent-soft-strong) !important;
 }
 
+/* Light indigo utility fills are equally unsuitable on dark surfaces. */
+[data-theme='dark'] :is(.bg-indigo-50, .bg-indigo-100) {
+  background-color: var(--color-accent-soft) !important;
+}
+
+[data-theme='dark'] :is(.border-indigo-100, .border-indigo-200) {
+  border-color: var(--color-accent-soft-strong) !important;
+}
+
 @media (max-width: 1080px) {
   .grid--stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
