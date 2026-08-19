@@ -407,7 +407,7 @@ export function ModerationSupportChatPage() {
         ) : !isClosed && chat.can_manage_ticket ? (
           <div className="bg-surface rounded-b-xl border border-slate-200 border-t-0 p-3 shrink-0">
             <form onSubmit={handleSend} className="flex items-end gap-2">
-              <label className="shrink-0 cursor-pointer text-slate-400 hover:text-indigo-600 transition-colors p-2">
+              <label className="flex h-[38px] w-[38px] shrink-0 cursor-pointer items-center justify-center text-slate-400 transition-colors hover:text-indigo-600">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
                 <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp,application/pdf" className="hidden" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
               </label>
@@ -420,7 +420,7 @@ export function ModerationSupportChatPage() {
                   onKeyDown={handleKeyDown}
                   rows={1}
                   placeholder="Ответ модератора..."
-                  className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg text-slate-800 focus:bg-surface focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all resize-none"
+                  className="block min-h-[38px] w-full resize-none rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 outline-none transition-all focus:border-indigo-600 focus:bg-surface focus:ring-2 focus:ring-indigo-600/20"
                 />
                 {file ? (
                   <div className="flex items-center gap-1 mt-0.5 min-w-0">
@@ -434,7 +434,7 @@ export function ModerationSupportChatPage() {
               </div>
 
               <div className="hidden sm:block shrink-0 w-36">
-                <select value={sessionDuration} onChange={(e) => setSessionDuration(e.target.value)} className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-800 focus:bg-surface focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all">
+                <select value={sessionDuration} onChange={(e) => setSessionDuration(e.target.value)} className="h-[38px] w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-xs text-slate-800 outline-none transition-all focus:border-indigo-600 focus:bg-surface focus:ring-2 focus:ring-indigo-600/20">
                   <option value="day">1 день</option>
                   <option value="week">1 неделя</option>
                   <option value="month">1 месяц</option>
@@ -442,7 +442,7 @@ export function ModerationSupportChatPage() {
                 </select>
               </div>
 
-              <button type="submit" disabled={isSending} className="shrink-0 bg-indigo-600 text-white p-2 rounded-lg hover:bg-indigo-700 transition-colors">
+              <button type="submit" disabled={isSending} className="inline-flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-white transition-colors hover:bg-indigo-700 disabled:opacity-60">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>
               </button>
             </form>

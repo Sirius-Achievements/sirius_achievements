@@ -43,6 +43,7 @@ ROLE_HIERARCHY = {
 }
 
 PDF_FONT_NAME = 'ui_sans'
+PDF_TEXT_COLOR = (0, 0, 0)
 PDF_FONT_CANDIDATES = (
     Path('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'),
     Path('/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf'),
@@ -817,14 +818,14 @@ async def export_user_pdf(
             lines = wrap(paragraph.strip() or ' ', width=width, break_long_words=False, break_on_hyphens=False) or ['']
             for line in lines:
                 ensure_space(size + gap)
-                page.insert_text((left, y), line, fontsize=size, fontname=pdf_font_name, color=color)
+                page.insert_text((left, y), line, fontsize=size, fontname=pdf_font_name, color=PDF_TEXT_COLOR)
                 y += size + gap
 
     def write_heading(text: str):
         nonlocal y
         ensure_space(26)
         page.draw_line((left, y - 4), (right, y - 4), color=(0.88, 0.9, 0.96), width=1)
-        page.insert_text((left, y + 8), text, fontsize=14, fontname=pdf_font_name, color=(0.35, 0.3, 0.92))
+        page.insert_text((left, y + 8), text, fontsize=14, fontname=pdf_font_name, color=PDF_TEXT_COLOR)
         y += 26
 
     avatar_path = getattr(target_user, 'avatar_path', None)
@@ -907,4 +908,3 @@ async def export_user_pdf(
         media_type='application/pdf',
         headers={'Content-Disposition': f'attachment; filename="{filename}"'},
     )
-
