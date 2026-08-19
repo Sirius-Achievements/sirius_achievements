@@ -108,9 +108,9 @@ export function StaffSectionHeader({ kind, currentView, title, description }: St
               key={item.key}
               to={item.to}
               className={cn(
-                'rounded-2xl border px-4 py-3 transition-all',
+                'staff-section-card rounded-2xl border px-4 py-3 transition-all',
                 isActive
-                  ? 'border-indigo-500 bg-indigo-600 text-white shadow-sm shadow-indigo-600/20'
+                  ? 'staff-section-card--active border-indigo-500 bg-indigo-600 text-white shadow-sm shadow-indigo-600/20'
                   : 'border-slate-200 bg-surface text-slate-700 hover:border-indigo-200 hover:bg-indigo-50/50',
               )}
             >

@@ -392,6 +392,61 @@
   color: var(--color-text-soft);
 }
 
+.sidebar-desktop {
+  width: 16rem;
+  flex-shrink: 0;
+  transition: width 0.22s ease;
+}
+
+.sidebar-desktop--collapsed {
+  width: 5rem;
+}
+
+.sidebar-desktop--collapsed .sidebar-brand-title,
+.sidebar-desktop--collapsed .sidebar-label,
+.sidebar-desktop--collapsed .sidebar-chevron,
+.sidebar-desktop--collapsed .sidebar-subnav,
+.sidebar-desktop--collapsed .sidebar-admin-label {
+  display: none !important;
+}
+
+.sidebar-desktop--collapsed .sidebar-primary-link,
+.sidebar-desktop--collapsed .sidebar-section-button {
+  position: relative;
+  justify-content: center;
+  gap: 0;
+  padding-inline: 0.65rem;
+}
+
+.sidebar-desktop--collapsed .sidebar-count-badge {
+  position: absolute;
+  top: 0.1rem;
+  right: 0.1rem;
+  min-width: 1rem;
+  height: 1rem;
+  padding-inline: 0.2rem;
+  font-size: 0.48rem;
+  box-shadow: none;
+}
+
+.sidebar-desktop--collapsed .sidebar-section-button > div {
+  gap: 0;
+}
+
+.sidebar-desktop--collapsed .sidebar-primary-icon {
+  margin-right: 0 !important;
+}
+
+[data-theme='dark'] .sidebar-section-button {
+  background: transparent !important;
+  color: var(--color-text-soft) !important;
+}
+
+[data-theme='dark'] .sidebar-section-button:hover {
+  background: var(--color-accent-soft) !important;
+  color: var(--color-accent-strong) !important;
+}
+
 .app-main {
   min-width: 0;
   flex: 1;
@@ -1085,6 +1140,12 @@
 
 .toast--info .toast__dot {
   background: var(--color-accent);
+}
+
+[data-theme='dark'] .staff-section-card--active {
+  border-color: var(--color-accent) !important;
+  background: linear-gradient(135deg, var(--color-accent), var(--color-accent-strong)) !important;
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--color-accent) 20%, transparent) !important;
 }
 
 .empty-state {

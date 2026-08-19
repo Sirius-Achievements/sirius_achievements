@@ -100,13 +100,13 @@ export function DashboardPage() {
             datasets: [{
               label: 'Загружено документов',
               data: stats.chart_data.counts,
-              borderColor: dark() ? '#b0b91a' : cssVar('--theme-accent', '#4f46e5'),
-              backgroundColor: dark() ? 'rgba(176, 185, 26, 0.18)' : 'rgba(79, 70, 229, 0.08)',
+              borderColor: dark() ? cssVar('--theme-accent-strong', '#d65a43') : cssVar('--theme-accent', '#4f46e5'),
+              backgroundColor: dark() ? 'rgba(214, 90, 67, 0.18)' : 'rgba(79, 70, 229, 0.08)',
               fill: true,
               tension: 0.3,
               borderWidth: 2,
               pointBackgroundColor: cssVar('--theme-surface', '#ffffff'),
-              pointBorderColor: dark() ? '#b0b91a' : cssVar('--theme-accent-strong', '#4338ca'),
+              pointBorderColor: dark() ? cssVar('--theme-accent-strong', '#d65a43') : cssVar('--theme-accent-strong', '#4338ca'),
               pointRadius: 3,
               pointHoverRadius: 6,
             }],
@@ -371,7 +371,7 @@ export function DashboardPage() {
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 bg-surface p-5 rounded-xl border border-slate-200 shadow-sm"><h3 className="text-sm font-semibold text-slate-800 mb-4">Динамика загрузки достижений</h3><div className="h-64 w-full"><canvas ref={chartCanvasRef}></canvas></div></div>
-            <div className="bg-surface p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col"><h3 className="text-sm font-semibold text-slate-800 mb-4">Лидеры периода</h3><div className="overflow-y-auto flex-1 pr-2 scrollbar-hide"><div className="space-y-4">{stats?.top_students?.length ? stats.top_students.map((row, index) => <div key={row.id} className="flex items-center justify-between group"><div className="flex items-center"><div className={`w-8 h-8 rounded-full ${index === 0 ? 'bg-yellow-100 text-yellow-600' : index === 1 ? 'bg-slate-200 text-slate-600' : index === 2 ? 'bg-orange-100 text-orange-600' : 'bg-indigo-50 text-indigo-600'} flex items-center justify-center text-xs font-bold mr-3`}>{index + 1}</div><div><Link to={`/users/${row.id}`} className="text-sm font-medium text-slate-800 hover:text-indigo-600 transition-colors">{row.first_name} {row.last_name.slice(0, 1)}.</Link><div className="text-[10px] text-slate-400">{[row.course ? courseLabel(row.course) : null, row.study_group || null].filter(Boolean).join(' • ') || row.education_level || '—'}</div></div></div><div className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded">+{row.points}</div></div>) : <div className="text-center text-slate-400 text-xs py-8 bg-slate-50 rounded-lg border border-dashed border-slate-200">Нет начисленных баллов за период</div>}</div></div></div>
+            <div className="bg-surface p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col"><h3 className="text-sm font-semibold text-slate-800 mb-4">Лидеры периода</h3><div className="overflow-y-auto flex-1 pr-2 scrollbar-hide"><div className="space-y-4">{stats?.top_students?.length ? stats.top_students.map((row, index) => <div key={row.id} className="flex items-center justify-between group"><div className="flex items-center"><div className="w-8 h-8 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center text-xs font-bold mr-3">{index + 1}</div><div><Link to={`/users/${row.id}`} className="text-sm font-medium text-slate-800 hover:text-indigo-600 transition-colors">{row.first_name} {row.last_name.slice(0, 1)}.</Link><div className="text-[10px] text-slate-400">{[row.course ? courseLabel(row.course) : null, row.study_group || null].filter(Boolean).join(' • ') || row.education_level || '—'}</div></div></div><div className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded">+{row.points}</div></div>) : <div className="text-center text-slate-400 text-xs py-8 bg-slate-50 rounded-lg border border-dashed border-slate-200">Нет начисленных баллов за период</div>}</div></div></div>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
