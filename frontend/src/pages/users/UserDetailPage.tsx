@@ -72,6 +72,7 @@ export function UserDetailPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [isSavingRole, setIsSavingRole] = useState(false)
   const [isSavingGpa, setIsSavingGpa] = useState(false)
+  const [documentsPage, setDocumentsPage] = useState(1)
   const [isRestoringUser, setIsRestoringUser] = useState(false)
   const [supportModalOpen, setSupportModalOpen] = useState(false)
   const [supportSubject, setSupportSubject] = useState('Сообщение от модератора')
@@ -140,6 +141,7 @@ export function UserDetailPage() {
     try {
       const detailResponse = await usersApi.get(userId)
       setDetail(detailResponse.data)
+      setDocumentsPage(1)
       setRole(detailResponse.data.user.role)
       setEducationLevel(detailResponse.data.user.education_level ?? '')
       setModeratorCourses(detailResponse.data.user.moderator_courses ?? [])
@@ -218,7 +220,7 @@ export function UserDetailPage() {
       chartInstanceRef.current?.destroy()
       chartInstanceRef.current = null
     }
-  }, [detail])
+  }, [detail, isLoading])
 
   useEffect(() => {
     if (!radarChartRef.current || !detail?.achievements?.length) return
@@ -282,7 +284,7 @@ export function UserDetailPage() {
       radarInstanceRef.current?.destroy()
       radarInstanceRef.current = null
     }
-  }, [detail, hiddenCats])
+  }, [detail, hiddenCats, isLoading])
 
   const handleRoleSave = async () => {
     setIsSavingRole(true)
@@ -498,6 +500,13 @@ export function UserDetailPage() {
   if (isLoading) return <div className="py-16"><LoadingSpinner /></div>
   if (!detail) return null
 
+  const documentsPerPage = 8
+  const documentsTotalPages = Math.max(1, Math.ceil(detail.achievements.length / documentsPerPage))
+  const safeDocumentsPage = Math.min(documentsPage, documentsTotalPages)
+  const visibleDocuments = detail.achievements.slice((safeDocumentsPage - 1) * documentsPerPage, safeDocumentsPage * documentsPerPage)
+  const documentPageButtons = Array.from({ length: documentsTotalPages }, (_, index) => index + 1)
+    .filter((page) => page <= 2 || page >= documentsTotalPages - 1 || Math.abs(page - safeDocumentsPage) <= 1)
+
   const studentPortrait = detail.user.role === 'STUDENT' && detail.achievements.length ? (() => {
     const pointsMap: Record<string, number> = {}
     for (const cat of RADAR_CATS) pointsMap[cat] = 0
@@ -557,8 +566,8 @@ export function UserDetailPage() {
 
       {error ? <div className="bg-red-50 border border-red-100 text-red-600 text-sm px-4 py-3 rounded-lg">{error}</div> : null}
 
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
-        <div className={`flex flex-col gap-4 xl:col-span-4 ${isGuestOrPending && !isAdminViewer ? 'max-w-xl mx-auto w-full' : ''}`}>
+      <div className="space-y-5">
+        <div className={`grid grid-cols-1 gap-4 xl:grid-cols-[minmax(280px,0.8fr)_minmax(0,1.2fr)] ${isGuestOrPending && !isAdminViewer ? 'max-w-4xl mx-auto w-full' : ''}`}>
           <div className="bg-surface rounded-xl border border-slate-200 p-4 text-center flex flex-col items-center shadow-sm">
             <div className="h-20 w-20 mb-3 relative">
               {detail.user.avatar_path ? <img className="h-20 w-20 rounded-full object-cover border border-slate-200" src={buildMediaUrl(detail.user.avatar_path)} alt="Avatar" /> : <div className="h-20 w-20 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600 text-2xl font-bold">{detail.user.first_name.slice(0, 1)}{detail.user.last_name.slice(0, 1)}</div>}
@@ -655,7 +664,7 @@ export function UserDetailPage() {
           </div>
         </div>
 
-        {!isGuestOrPending || isAdminViewer ? <div className="space-y-5 xl:col-span-8">
+        {!isGuestOrPending || isAdminViewer ? <div className="space-y-5">
           {!isGuestOrPending ? <div className="grid grid-cols-1 gap-4 md:grid-cols-2"><div className="bg-surface p-5 rounded-xl border border-slate-200 shadow-sm"><div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Документов в текущем сезоне</div><div className="text-2xl font-semibold text-slate-800 mt-1">{detail.total_docs}</div></div>{detail.rank ? <div className="bg-surface p-5 rounded-xl border border-slate-200 flex justify-between items-center shadow-sm"><div><div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Текущее место</div><div className="text-2xl font-bold text-indigo-600 mt-1">#{detail.rank}</div></div><div className="w-px h-8 bg-slate-200" /><div className="text-right"><div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Баллы</div><div className="text-2xl font-bold text-indigo-600 mt-1">{detail.total_points}</div></div></div> : null}</div> : null}
 
           <div className="bg-indigo-50/60 p-5 sm:p-6 rounded-xl border border-indigo-100 shadow-sm">
@@ -691,7 +700,7 @@ export function UserDetailPage() {
             </div>
             {detail.achievements.length ? (
               <ul className="divide-y divide-slate-100">
-                {detail.achievements.map((item) => (
+                {visibleDocuments.map((item) => (
                   <li key={item.id} className="p-4 hover:bg-slate-50 flex items-center justify-between transition-colors">
                     <div className="flex items-center flex-1 min-w-0 pr-4">
                       <div className="h-10 w-10 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600 mr-4 shrink-0 border border-indigo-100">
@@ -742,6 +751,14 @@ export function UserDetailPage() {
                 <p className="text-sm text-slate-500">Достижений пока нет.</p>
               </div>
             )}
+            {documentsTotalPages > 1 ? (
+              <div className="flex items-center justify-between gap-3 border-t border-slate-100 bg-slate-50/60 px-4 py-3">
+                <span className="text-xs text-slate-400">Страница {safeDocumentsPage} из {documentsTotalPages}</span>
+                <div className="flex items-center gap-1">
+                  {documentPageButtons.map((page, index) => <span key={page} className="contents">{index > 0 && page - documentPageButtons[index - 1] > 1 ? <span className="px-1 text-xs text-slate-400">…</span> : null}<button type="button" onClick={() => setDocumentsPage(page)} aria-current={page === safeDocumentsPage ? 'page' : undefined} className={`min-w-8 rounded-md px-2 py-1 text-xs font-medium transition-colors ${page === safeDocumentsPage ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-indigo-50 hover:text-indigo-600'}`}>{page}</button></span>)}
+                </div>
+              </div>
+            ) : null}
           </div>
 
           {detail.user.role === 'STUDENT' ? <section className="overflow-hidden rounded-xl border border-slate-200 bg-surface shadow-sm"><div className="border-b border-slate-100 px-5 py-3"><h3 className="text-sm font-semibold text-slate-700">Аналитика достижений</h3><p className="mt-0.5 text-xs text-slate-400">Динамика баллов и распределение по направлениям</p></div><div className="grid gap-4 p-4 lg:grid-cols-2"><div className="rounded-xl border border-slate-100 bg-slate-50/60 p-3"><h4 className="mb-2 text-xs font-semibold text-slate-600">Динамика</h4>{detail.chart_labels.length ? <div className="h-56"><canvas ref={chartRef} /></div> : <div className="flex h-56 items-center justify-center text-center text-sm text-slate-400">Нет одобренных достижений для отображения графика</div>}</div>{studentPortrait}</div></section> : null}

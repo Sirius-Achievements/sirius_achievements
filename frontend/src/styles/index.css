@@ -1348,6 +1348,19 @@
   stroke: var(--color-accent) !important;
 }
 
+/* Tailwind's light slate fills otherwise stay light in dark mode. */
+[data-theme='dark'] :where([class*="bg-slate-50"], [class*="bg-slate-100"], [class*="bg-slate-200"]) {
+  background-color: var(--color-surface-soft) !important;
+}
+
+[data-theme='dark'] :where([class*="hover:bg-slate-50"]:hover, [class*="hover:bg-slate-100"]:hover, [class*="hover:bg-slate-200"]:hover) {
+  background-color: var(--color-surface-muted) !important;
+}
+
+[data-theme='dark'] :where([class*="border-slate-100"], [class*="border-slate-200"], [class*="border-slate-300"]) {
+  border-color: var(--color-border-soft) !important;
+}
+
 @media (max-width: 1080px) {
   .grid--stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
