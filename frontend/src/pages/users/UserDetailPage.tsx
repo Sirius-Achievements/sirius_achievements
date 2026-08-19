@@ -237,15 +237,21 @@ export function UserDetailPage() {
         labels: RADAR_CATS,
         datasets: [{
           label: 'Достижения',
-          data: RADAR_CATS.map((cat) => hiddenCats.has(cat) ? 0 : (pointsMap[cat] ?? 0)),
-          borderColor: '#6366f1',
-          backgroundColor: 'rgba(99, 102, 241, 0.16)',
+          data: RADAR_CATS.map((cat) => {
+            const value = pointsMap[cat] ?? 0
+            return hiddenCats.has(cat) || value <= 0 ? null : value
+          }),
+          borderColor: '#8b5cf6',
+          backgroundColor: 'rgba(124, 58, 237, 0.62)',
+          fill: true,
+          spanGaps: true,
+          tension: 0,
           borderWidth: 2,
-          pointBackgroundColor: RADAR_CATS.map((cat, i) => hiddenCats.has(cat) ? 'transparent' : RADAR_COLORS[i].border),
-          pointBorderColor: '#fff',
-          pointBorderWidth: 2,
-          pointRadius: RADAR_CATS.map((cat) => hiddenCats.has(cat) ? 0 : 4),
-          pointHoverRadius: 5,
+          pointBackgroundColor: '#8b5cf6',
+          pointBorderColor: '#ddd6fe',
+          pointBorderWidth: 1,
+          pointRadius: RADAR_CATS.map((cat) => !hiddenCats.has(cat) && (pointsMap[cat] ?? 0) > 0 ? 3 : 0),
+          pointHoverRadius: RADAR_CATS.map((cat) => !hiddenCats.has(cat) && (pointsMap[cat] ?? 0) > 0 ? 5 : 0),
         }],
       },
       options: {
