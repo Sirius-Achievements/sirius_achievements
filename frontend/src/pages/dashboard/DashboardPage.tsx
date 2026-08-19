@@ -135,6 +135,19 @@ export function DashboardPage() {
         const segmentCount = stats.category_breakdown.length
         const primaryColor = cssVar('--theme-accent', isDarkTheme ? '#b34230' : '#4cbdcf')
         const translucentPrimary = isDarkTheme ? 'rgba(179, 66, 48, 0.5)' : 'rgba(76, 189, 207, 0.5)'
+        const legendTextColor = cssVar('--theme-text-soft', '#556074')
+        type ScoreStructureChart = Chart & { $scoreHoverIndex?: number | null }
+        const setScoreHover = (chart: Chart, index: number | null, syncSegment = false) => {
+          const scoreChart = chart as ScoreStructureChart
+          const activeSegment = chart.getActiveElements()[0]?.index ?? null
+          if (scoreChart.$scoreHoverIndex === index && (!syncSegment || activeSegment === index)) return
+
+          scoreChart.$scoreHoverIndex = index
+          if (syncSegment) {
+            chart.setActiveElements(index === null ? [] : [{ datasetIndex: 0, index }])
+          }
+          chart.update('none')
+        }
 
         chartRef.current = new Chart(canvas.getContext('2d')!, {
           type: 'doughnut',
@@ -154,8 +167,34 @@ export function DashboardPage() {
             responsive: true,
             maintainAspectRatio: false,
             cutout: '75%',
+            onHover: (_event, elements, chart) => {
+              setScoreHover(chart, elements[0]?.index ?? null)
+            },
             plugins: {
-              legend: { position: 'right', labels: { usePointStyle: true, boxWidth: 8, color: cssVar('--theme-text-soft', '#556074'), font: { size: 11 } } },
+              legend: {
+                position: 'right',
+                onHover: (_event, item, legend) => setScoreHover(legend.chart, item.index ?? null, true),
+                onLeave: (_event, _item, legend) => setScoreHover(legend.chart, null, true),
+                labels: {
+                  usePointStyle: true,
+                  boxWidth: 8,
+                  color: legendTextColor,
+                  font: { size: 11 },
+                  generateLabels: (chart) => {
+                    const activeIndex = (chart as ScoreStructureChart).$scoreHoverIndex ?? null
+                    return (chart.data.labels ?? []).map((label, index) => ({
+                      text: Array.isArray(label) ? label.join(' ') : String(label),
+                      index,
+                      hidden: !chart.getDataVisibility(index),
+                      fillStyle: index === activeIndex ? primaryColor : translucentPrimary,
+                      strokeStyle: index === activeIndex ? primaryColor : translucentPrimary,
+                      fontColor: index === activeIndex ? primaryColor : legendTextColor,
+                      lineWidth: index === activeIndex ? 2 : 0,
+                      pointStyle: 'circle',
+                    }))
+                  },
+                },
+              },
               tooltip: { padding: 12, cornerRadius: 8, backgroundColor: dark() ? 'rgba(13, 17, 19, 0.96)' : 'rgba(15, 23, 42, 0.9)' },
             },
           },
