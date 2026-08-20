@@ -16,7 +16,6 @@ from app.middlewares.api_auth_middleware import auth
 from app.models.achievement import Achievement
 from app.models.audit_log import AuditLog
 from app.models.enums import AchievementStatus, EducationLevel, UserRole, UserStatus
-from app.models.season_result import SeasonResult
 from app.models.user import Users
 from app.repositories.admin.user_repository import UserRepository
 from app.repositories.admin.support_repository import SupportMessageRepository, SupportTicketRepository
@@ -31,6 +30,7 @@ from app.utils.media_paths import resolve_static_path
 from app.utils.notifications import make_notification, serialize_notification
 from app.utils.points import aggregated_gpa_bonus_expr, calculate_gpa_bonus
 from app.utils.search import escape_like
+from app.utils.season_history import SeasonHistoryItem, load_season_history
 from app.services.ws_manager import ws_manager
 
 from .serializers import serialize_achievement, serialize_user
@@ -134,7 +134,7 @@ def _can_access_target(current_user, target_user) -> bool:
     )
 
 
-def _serialize_season_result(item: SeasonResult):
+def _serialize_season_result(item: SeasonHistoryItem):
     return {
         'id': item.id,
         'season_name': item.season_name,
@@ -217,12 +217,7 @@ async def _load_user_profile_snapshot(db: AsyncSession, target_user: Users) -> d
     )
     achievements = (await db.execute(achievements_stmt)).scalars().all()
 
-    history_stmt = (
-        select(SeasonResult)
-        .filter(SeasonResult.user_id == user_id)
-        .order_by(SeasonResult.created_at.desc())
-    )
-    season_history = (await db.execute(history_stmt)).scalars().all()
+    season_history = await load_season_history(db, user_id)
 
     total_docs = len(achievements)
     rank = None

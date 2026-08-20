@@ -10,12 +10,12 @@ from app.infrastructure.database import get_db
 from app.middlewares.api_auth_middleware import auth, auth_optional
 from app.models.achievement import Achievement
 from app.models.enums import AchievementStatus, UserRole, UserStatus
-from app.models.season_result import SeasonResult
 from app.models.user import Users
 from app.utils import storage
 from app.utils.media_paths import guess_media_type, resolve_static_path
 from app.utils.points import aggregated_gpa_bonus_expr, calculate_gpa_bonus
 from app.utils.rate_limiter import rate_limiter
+from app.utils.season_history import load_season_history
 
 from .serializers import serialize_achievement, serialize_user_public
 
@@ -70,11 +70,7 @@ async def public_student_profile(
         .order_by(Achievement.created_at.desc())
     )
     achievements = (await db.execute(achievements_stmt)).scalars().all()
-    season_history = (await db.execute(
-        select(SeasonResult)
-        .filter(SeasonResult.user_id == student_id)
-        .order_by(SeasonResult.created_at.desc(), SeasonResult.id.desc())
-    )).scalars().all()
+    season_history = await load_season_history(db, student_id)
 
     gpa_bonus = calculate_gpa_bonus(student.session_gpa)
     total_points = sum(int(item.points or 0) for item in achievements) + gpa_bonus

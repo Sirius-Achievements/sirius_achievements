@@ -17,7 +17,6 @@ from app.middlewares.api_auth_middleware import auth
 from app.models.achievement import Achievement
 from app.models.enums import AchievementStatus, UserStatus
 from app.models.resume_version import ResumeVersion
-from app.models.season_result import SeasonResult
 from app.repositories.admin.user_repository import UserRepository
 from app.repositories.admin.user_token_repository import UserTokenRepository
 from app.schemas.admin.auth import ResetPasswordSchema
@@ -27,6 +26,7 @@ from app.services.admin.user_token_service import UserTokenService
 from app.services.auth_service import AuthService
 from app.utils.points import calculate_gpa_bonus
 from app.utils.rate_limiter import rate_limiter
+from app.utils.season_history import load_season_history
 
 from .serializers import serialize_achievement, serialize_user
 
@@ -175,11 +175,7 @@ async def profile(current_user=Depends(auth), db: AsyncSession = Depends(get_db)
         .limit(10)
     )).scalars().all()
 
-    season_history = (await db.execute(
-        select(SeasonResult)
-        .filter(SeasonResult.user_id == user.id)
-        .order_by(SeasonResult.created_at.desc(), SeasonResult.id.desc())
-    )).scalars().all()
+    season_history = await load_season_history(db, user.id)
 
     completed_fields = [
         bool(user.first_name),
