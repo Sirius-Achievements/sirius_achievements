@@ -292,7 +292,7 @@ function StudentProfilePageInner() {
       {/* Profile card */}
       <div className="bg-surface rounded-2xl border border-slate-200 shadow-sm p-6 sm:p-8 mb-6">
         <div className="flex flex-col gap-6 xl:flex-row xl:items-center">
-          <div className="flex-shrink-0">
+          <div className="mx-auto flex-shrink-0 xl:mx-0">
             {data.student.avatar_path ? (
               <img src={buildMediaUrl(data.student.avatar_path)} alt="Аватар" className="w-20 h-20 rounded-full object-cover border-2 border-slate-200" />
             ) : (
