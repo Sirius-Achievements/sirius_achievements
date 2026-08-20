@@ -7,6 +7,22 @@ export interface LeaderboardRow {
   total_points: number
   achievements_count: number
   is_me: boolean
+  points_breakdown: Array<{ label: string; points: number }>
+  previous_rank?: number | null
+  previous_season?: string | null
+}
+
+export interface CompletedSeason {
+  name: string
+  created_at?: string | null
+  participants: number
+}
+
+export interface CompletedSeasonRow {
+  rank: number
+  user: User
+  total_points: number
+  is_me: boolean
 }
 
 export interface LeaderboardResponse {
@@ -48,6 +64,14 @@ export const leaderboardApi = {
     return client.get('/leaderboard/export', { params, responseType: 'blob' })
   },
 
+  getSeasons(params: LeaderboardParams) {
+    return client.get<{ seasons: CompletedSeason[] }>('/leaderboard/seasons', { params })
+  },
+
+  getSeason(seasonName: string, params: LeaderboardParams) {
+    return client.get<{ season_name: string; leaderboard: CompletedSeasonRow[] }>(`/leaderboard/seasons/${encodeURIComponent(seasonName)}`, { params })
+  },
+
   endSeason(seasonName: string) {
     const formData = new FormData()
     formData.append('season_name', seasonName)
@@ -56,5 +80,4 @@ export const leaderboardApi = {
     })
   },
 }
-
 

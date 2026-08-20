@@ -5,6 +5,7 @@ import io
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.infrastructure.database import get_db
 from app.middlewares.api_auth_middleware import auth
@@ -14,10 +15,13 @@ from app.utils.access import is_in_zone
 from app.utils.media_paths import guess_media_type, resolve_static_path
 from app.utils import storage
 from app.utils.notifications import broadcast_staff_event
+from app.models.support_ticket import SupportTicket
+from app.models.support_message import SupportMessage
 
 from .serializers import serialize_support_message, serialize_support_ticket
 
 router = APIRouter(prefix='/api/v1/support', tags=['api.v1.support'])
+SUPPORT_CATEGORIES = {'technical', 'documents', 'rating', 'account'}
 
 
 def get_support_service(db: AsyncSession = Depends(get_db)):
@@ -96,8 +100,25 @@ async def list_tickets(
     return {
         'tickets': [serialize_support_ticket(ticket) for ticket in tickets],
         'total': len(tickets),
+        'unread_count': sum(int(ticket.student_unread_count or 0) for ticket in tickets),
         'view': view,
     }
+
+
+@router.get('/similar')
+async def similar_tickets(
+    q: str = Query(..., min_length=3, max_length=200),
+    current_user=Depends(auth),
+    db: AsyncSession = Depends(get_db),
+):
+    words = [word for word in q.strip().split() if len(word) >= 3][:4]
+    if not words:
+        return {'tickets': []}
+    stmt = select(SupportTicket).filter(SupportTicket.user_id == current_user.id)
+    stmt = stmt.filter(*[SupportTicket.subject.ilike(f'%{word}%') for word in words])
+    stmt = stmt.order_by(SupportTicket.updated_at.desc()).limit(5)
+    tickets = (await db.execute(stmt)).scalars().all()
+    return {'tickets': [serialize_support_ticket(ticket) for ticket in tickets]}
 
 
 @router.post('')
@@ -105,17 +126,21 @@ async def list_tickets(
 async def create_ticket(
     subject: str = Form(..., min_length=1, max_length=200),
     message: str = Form(..., min_length=1, max_length=5000),
+    category: str = Form(default='technical'),
     file: UploadFile | None = File(default=None),
     current_user=Depends(auth),
     db: AsyncSession = Depends(get_db),
     service: SupportService = Depends(get_support_service),
 ):
+    if category not in SUPPORT_CATEGORIES:
+        raise HTTPException(status_code=400, detail='Выберите корректную категорию обращения.')
     try:
         ticket = await service.create_ticket_with_initial_message(
             user_id=current_user.id,
             subject=subject,
             text=message,
             file=file if file and file.filename else None,
+            category=category,
         )
         await broadcast_staff_event(
             db,
@@ -140,6 +165,10 @@ async def get_ticket(
     if not ticket or ticket.user_id != current_user.id:
         raise HTTPException(status_code=404, detail='Ticket not found')
 
+    if ticket.student_unread_count:
+        ticket.student_unread_count = 0
+        await db.commit()
+
     return {
         'ticket': serialize_support_ticket(ticket, include_messages=True),
         'messages': [serialize_support_message(message) for message in ticket.messages],
@@ -151,6 +180,7 @@ async def send_message(
     ticket_id: int,
     text: str | None = Form(default=None, max_length=5000),
     file: UploadFile | None = File(default=None),
+    reply_to_id: int | None = Form(default=None),
     current_user=Depends(auth),
     db: AsyncSession = Depends(get_db),
     service: SupportService = Depends(get_support_service),
@@ -159,6 +189,10 @@ async def send_message(
     ticket = await ticket_repo.find_with_messages(ticket_id)
     if not ticket or ticket.user_id != current_user.id:
         raise HTTPException(status_code=404, detail='Ticket not found')
+    if reply_to_id is not None:
+        reply_to = await db.get(SupportMessage, reply_to_id)
+        if not reply_to or reply_to.ticket_id != ticket_id:
+            raise HTTPException(status_code=400, detail='Цитируемое сообщение не найдено в этом обращении.')
 
     try:
         message = await service.send_message(
@@ -167,6 +201,7 @@ async def send_message(
             text=text,
             file=file if file and file.filename else None,
             is_from_moderator=False,
+            reply_to_id=reply_to_id,
         )
         await broadcast_staff_event(
             db,

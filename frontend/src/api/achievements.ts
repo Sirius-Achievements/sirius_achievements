@@ -29,7 +29,7 @@ export const achievementsApi = {
   },
 
   delete(id: number) {
-    return client.delete<{ success: boolean }>(`/achievements/${id}`)
+    return client.delete<{ success: boolean; action?: 'archived' | 'deleted' }>(`/achievements/${id}`)
   },
 
   search(q: string) {

@@ -18,6 +18,16 @@ import { getErrorMessage } from '@/utils/http'
 
 const MODERATION_ACHIEVEMENTS_PAGE_SIZE = 10
 
+function queueAge(createdAt?: string) {
+  if (!createdAt) return '—'
+  const hours = Math.max(0, Math.floor((Date.now() - new Date(createdAt).getTime()) / 3_600_000))
+  return hours < 24 ? `${hours} ч.` : `${Math.floor(hours / 24)} дн.`
+}
+
+function isQueueOverdue(createdAt?: string) {
+  return Boolean(createdAt && Date.now() - new Date(createdAt).getTime() > 48 * 3_600_000)
+}
+
 export function ModerationAchievementsPage() {
   const { user: currentUser } = useAuth()
   const { pushToast } = useToast()
@@ -286,7 +296,7 @@ export function ModerationAchievementsPage() {
                 </thead>
                 <tbody className="divide-y divide-slate-50">
                   {items.map((item) => (
-                    <tr key={item.id} className="transition-colors hover:bg-slate-50">
+                    <tr key={item.id} className={`transition-colors hover:bg-slate-50 ${isQueueOverdue(item.created_at) ? 'bg-red-50/50' : ''}`}>
                       <td className="px-5 py-3">
                         <button
                           type="button"
@@ -346,7 +356,7 @@ export function ModerationAchievementsPage() {
                         {item.user ? (
                           <>
                             <Link
-                              to={`/users/${item.user.id}`}
+                              to={`/users/${item.user.id}?from=moderation-achievements`}
                               className="transition-colors hover:text-indigo-600"
                             >
                               {item.user.first_name} {item.user.last_name}
@@ -374,6 +384,9 @@ export function ModerationAchievementsPage() {
                       </td>
                       <td className="whitespace-nowrap px-5 py-3 text-xs text-slate-500">
                         {item.created_at ? new Date(item.created_at).toLocaleDateString('ru-RU') : '—'}
+                        <div className={`mt-1 text-[10px] font-medium ${isQueueOverdue(item.created_at) ? 'text-red-600' : 'text-slate-400'}`}>
+                          В очереди {queueAge(item.created_at)}
+                        </div>
                       </td>
                       <td className="px-5 py-3">
                         {!item.moderator_id ? (
@@ -422,7 +435,7 @@ export function ModerationAchievementsPage() {
                               onClick={() => void handleTake(item)}
                               className="text-xs font-bold text-indigo-600 hover:underline"
                             >
-                              Взять в работу
+                              Взять и открыть
                             </button>
                           ) : item.moderator_id === currentUser?.id ? (
                             <Link

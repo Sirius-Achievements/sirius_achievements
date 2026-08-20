@@ -1,6 +1,6 @@
 import Chart from 'chart.js/auto'
 import { useEffect, useRef, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 
 import { dashboardApi, type DashboardStats } from '@/api/dashboard'
 import { PointsGuide } from '@/components/points/PointsGuide'
@@ -38,6 +38,7 @@ function statusClass(status: string) {
 
 export function DashboardPage() {
   const { user } = useAuth()
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -51,9 +52,10 @@ export function DashboardPage() {
   const isStaff = user?.role === 'MODERATOR' || user?.role === 'SUPER_ADMIN'
   const isSuperAdmin = user?.role === 'SUPER_ADMIN'
   const isDeletedAccount = user?.status === 'deleted'
+  const isRejectedAccount = user?.status === 'rejected'
 
   useEffect(() => {
-    if (isDeletedAccount) {
+    if (isDeletedAccount || isRejectedAccount) {
       setStats(null)
       setError(null)
       setIsLoading(false)
@@ -73,7 +75,7 @@ export function DashboardPage() {
       }
     }
     void load()
-  }, [dateTo, dateFrom, isDeletedAccount, period])
+  }, [dateTo, dateFrom, isDeletedAccount, isRejectedAccount, period])
 
   useEffect(() => {
     const canvas = chartCanvasRef.current
@@ -114,6 +116,19 @@ export function DashboardPage() {
           options: {
             responsive: true,
             maintainAspectRatio: false,
+            onClick: (_event, elements) => {
+              const index = elements[0]?.index
+              const bucketDate = typeof index === 'number' ? stats.chart_data?.dates?.[index] : undefined
+              if (!bucketDate) return
+              const start = new Date(`${bucketDate}T00:00:00`)
+              const end = new Date(start)
+              if (period === 'all' && !dateFrom && !dateTo) {
+                end.setMonth(end.getMonth() + 1)
+                end.setDate(0)
+              }
+              const toIsoDate = (value: Date) => value.toISOString().slice(0, 10)
+              navigate(`/documents?date_from=${bucketDate}&date_to=${toIsoDate(end)}`)
+            },
             plugins: {
               legend: { display: false },
               tooltip: {
@@ -209,7 +224,7 @@ export function DashboardPage() {
       document.removeEventListener('themechange', onTheme)
       destroy()
     }
-  }, [isStaff, stats])
+  }, [dateFrom, dateTo, isStaff, navigate, period, stats])
 
   if (isDeletedAccount || stats?.deleted_account) {
     return (
@@ -231,6 +246,21 @@ export function DashboardPage() {
             >
               Написать в поддержку
             </Link>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (isRejectedAccount) {
+    return (
+      <div className="mx-auto max-w-6xl">
+        <div className="flex min-h-[50vh] items-center justify-center p-4 text-center">
+          <div className="w-full max-w-md rounded-xl border border-red-200 bg-surface p-8 shadow-sm">
+            <h2 className="text-xl font-bold text-slate-800">Регистрация отклонена</h2>
+            <p className="mt-3 text-sm text-slate-500">Причина модератора:</p>
+            <p className="mt-2 rounded-lg bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{user?.registration_rejection_reason || 'Причина не указана. Обратитесь в поддержку.'}</p>
+            <Link to="/support" className="mt-5 inline-flex rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white">Написать в поддержку</Link>
           </div>
         </div>
       </div>
@@ -279,9 +309,9 @@ export function DashboardPage() {
   }
 
   const staffCards = [
-    { label: 'Новых студентов', value: `+${stats?.new_users_count ?? 0}` },
-    { label: 'Всего загружено док.', value: `${stats?.total_achievements ?? 0}` },
-    { label: 'Одобрено модерацией', value: `${stats?.approved_achievements ?? 0}` },
+    { label: 'Новых студентов', value: `+${stats?.new_users_count ?? 0}`, trend: stats?.trend?.new_users },
+    { label: 'Всего загружено док.', value: `${stats?.total_achievements ?? 0}`, trend: stats?.trend?.documents },
+    { label: 'Одобрено модерацией', value: `${stats?.approved_achievements ?? 0}`, trend: stats?.trend?.approved },
   ]
   const studentCards = [
     { label: 'Баллы за период', value: `${stats?.my_points ?? 0}`, accent: true },
@@ -331,11 +361,39 @@ export function DashboardPage() {
 
       {isStaff ? (
         <>
+          <section className="rounded-xl border border-slate-200 bg-surface p-5 shadow-sm">
+            <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-800">Рабочая очередь</h3>
+                <p className="mt-1 text-xs text-slate-500">Сначала показаны заявки, требующие реакции команды.</p>
+              </div>
+              <Link to="/moderation/achievements" className="text-xs font-semibold text-indigo-600 hover:underline">Открыть очередь →</Link>
+            </div>
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+              {[
+                ['Просрочено', stats?.staff_queue?.overdue ?? 0, 'Старше 48 часов', '/moderation/achievements?age=overdue'],
+                ['Свободно', stats?.staff_queue?.free ?? 0, 'Ещё не взяты в работу', '/moderation/achievements?assignment=free'],
+                ['Закреплено за мной', stats?.staff_queue?.mine ?? 0, 'Моя текущая нагрузка', '/my-work?tab=achievements'],
+              ].map(([label, value, hint, href]) => (
+                <Link key={label} to={String(href)} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 transition hover:border-indigo-300 hover:bg-indigo-50/50">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</div>
+                  <div className="mt-1 text-2xl font-bold text-slate-800">{value}</div>
+                  <div className="mt-1 text-xs text-slate-500">{hint}</div>
+                </Link>
+              ))}
+            </div>
+          </section>
+
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {staffCards.map((card) => (
               <div key={card.label} className="bg-surface p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
                 <div className="flex items-center gap-2 mb-2"><div className="w-2 h-2 rounded-full bg-indigo-500"></div><p className="text-[10px] text-slate-600 uppercase font-bold tracking-wider">{card.label}</p></div>
                 <p className="text-3xl font-semibold text-slate-800">{card.value}</p>
+                {typeof card.trend === 'number' ? (
+                  <p className={`mt-2 text-xs font-semibold ${card.trend >= 0 ? 'text-indigo-600' : 'text-slate-500'}`}>
+                    {card.trend > 0 ? '+' : ''}{card.trend}% к прошлому периоду
+                  </p>
+                ) : null}
               </div>
             ))}
             <div className="bg-indigo-600 p-5 rounded-xl shadow-sm flex flex-col text-white relative overflow-hidden">
@@ -356,6 +414,7 @@ export function DashboardPage() {
             {[
               {
                 title: 'Пользователи',
+                href: '/users',
                 items: [
                   ['Всего', stats?.users_stats?.total],
                   ['Активные', stats?.users_stats?.active],
@@ -367,6 +426,7 @@ export function DashboardPage() {
               },
               {
                 title: 'Документы',
+                href: '/documents',
                 items: [
                   ['Всего', stats?.documents_stats?.total],
                   ['На проверке', stats?.documents_stats?.pending],
@@ -378,6 +438,7 @@ export function DashboardPage() {
               },
               {
                 title: 'Обращения',
+                href: '/moderation/support?tab=all',
                 items: [
                   ['Всего за период', stats?.support_stats?.total],
                   ['Открытые', stats?.support_stats?.open],
@@ -386,8 +447,8 @@ export function DashboardPage() {
                 ],
               },
             ].map((group) => (
-              <div key={group.title} className="bg-surface rounded-xl border border-slate-200 p-5 shadow-sm">
-                <h3 className="text-sm font-semibold text-slate-800 mb-4">{group.title}</h3>
+              <Link key={group.title} to={group.href} className="block bg-surface rounded-xl border border-slate-200 p-5 shadow-sm transition hover:border-indigo-300 hover:shadow-md">
+                <div className="mb-4 flex items-center justify-between"><h3 className="text-sm font-semibold text-slate-800">{group.title}</h3><span className="text-xs font-semibold text-indigo-600">Открыть →</span></div>
                 <div className="grid grid-cols-2 gap-3">
                   {group.items.map(([label, value]) => (
                     <div key={label} className="rounded-lg bg-slate-50 border border-slate-100 px-3 py-2">
@@ -396,7 +457,7 @@ export function DashboardPage() {
                     </div>
                   ))}
                 </div>
-              </div>
+              </Link>
             ))}
           </div>
 
@@ -408,6 +469,7 @@ export function DashboardPage() {
                   <div key={item.title} className="rounded-lg border border-indigo-100 bg-indigo-50/60 px-4 py-3 dark:border-indigo-400/30 dark:bg-indigo-500/15">
                     <div className="text-sm font-semibold text-indigo-900 dark:text-indigo-100">{item.title}</div>
                     <div className="mt-1 text-xs leading-relaxed text-indigo-800/75 dark:text-indigo-100/85">{item.message}</div>
+                    {item.action_url ? <Link to={item.action_url} className="mt-3 inline-flex text-xs font-semibold text-indigo-700 underline underline-offset-4 dark:text-indigo-100">{item.action_label ?? 'Перейти'}</Link> : null}
                   </div>
                 ))}
               </div>
@@ -522,6 +584,19 @@ export function DashboardPage() {
         </>
       ) : (
         <>
+          <section className="rounded-xl border border-slate-200 bg-surface p-5 shadow-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div><h3 className="text-sm font-semibold text-slate-800">Что требует внимания</h3><p className="mt-1 text-xs text-slate-500">Самые важные следующие действия по вашему профилю.</p></div>
+              <span className="rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700">Профиль {stats?.profile_completion ?? 0}%</span>
+            </div>
+            <div className="mt-4 grid gap-3 md:grid-cols-3">
+              {(stats?.revision_achievements ?? 0) > 0 ? <Link to="/achievements?status=revision" className="rounded-lg border border-slate-200 bg-slate-50 p-3 hover:border-indigo-300"><div className="text-sm font-semibold text-slate-800">На доработке: {stats?.revision_achievements}</div><div className="mt-1 text-xs text-slate-500">Откройте комментарий модератора и исправьте документ.</div></Link> : null}
+              {(stats?.pending_achievements ?? 0) > 0 ? <Link to="/achievements?status=pending" className="rounded-lg border border-slate-200 bg-slate-50 p-3 hover:border-indigo-300"><div className="text-sm font-semibold text-slate-800">Ожидают модерации: {stats?.pending_achievements}</div><div className="mt-1 text-xs text-slate-500">Решение появится в истории статуса.</div></Link> : null}
+              {(stats?.profile_completion ?? 100) < 100 ? <Link to="/profile" className="rounded-lg border border-slate-200 bg-slate-50 p-3 hover:border-indigo-300"><div className="text-sm font-semibold text-slate-800">Профиль заполнен на {stats?.profile_completion ?? 0}%</div><div className="mt-1 text-xs text-slate-500">Добавьте недостающие данные и фотографию.</div></Link> : null}
+              {(stats?.revision_achievements ?? 0) === 0 && (stats?.pending_achievements ?? 0) === 0 && (stats?.profile_completion ?? 100) >= 100 ? <div className="md:col-span-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">Всё в порядке — обязательных действий сейчас нет.</div> : null}
+            </div>
+          </section>
+
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {studentCards.map((card) => (
               <div key={card.label} className={`${card.accent ? 'bg-indigo-600 text-white shadow-md' : 'bg-surface border border-slate-200 shadow-sm'} p-5 rounded-xl flex flex-col justify-between relative overflow-hidden`}>
@@ -532,6 +607,12 @@ export function DashboardPage() {
             ))}
           </div>
 
+          {(stats?.points_to_next_rank ?? 0) > 0 ? (
+            <Link to="/leaderboard" className="flex items-center justify-between gap-4 rounded-xl border border-slate-200 bg-surface px-5 py-4 shadow-sm transition hover:border-indigo-300">
+              <div><div className="text-sm font-semibold text-slate-800">До {stats?.next_rank}-го места осталось {stats?.points_to_next_rank} баллов</div><div className="mt-1 text-xs text-slate-500">Посмотрите рейтинг и структуру баллов соседних позиций.</div></div><span className="text-sm font-semibold text-indigo-600">Рейтинг →</span>
+            </Link>
+          ) : null}
+
           {stats?.recommendations?.length ? (
             <div className="bg-surface rounded-xl border border-slate-200 p-5 shadow-sm">
               <h3 className="text-sm font-semibold text-slate-800 mb-3">Рекомендации по направлениям</h3>
@@ -540,6 +621,7 @@ export function DashboardPage() {
                   <div key={item.title} className="rounded-lg border border-indigo-100 bg-indigo-50/60 px-4 py-3 dark:border-indigo-400/30 dark:bg-indigo-500/15">
                     <div className="text-sm font-semibold text-indigo-900 dark:text-indigo-100">{item.title}</div>
                     <div className="mt-1 text-xs leading-relaxed text-indigo-800/75 dark:text-indigo-100/85">{item.message}</div>
+                    {item.action_url ? <Link to={item.action_url} className="mt-3 inline-flex text-xs font-semibold text-indigo-700 underline underline-offset-4 dark:text-indigo-100">{item.action_label ?? 'Перейти'}</Link> : null}
                   </div>
                 ))}
               </div>

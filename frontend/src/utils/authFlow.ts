@@ -35,6 +35,11 @@ function decodeTokenExpiry(token: string): number | undefined {
   }
 }
 
+export function isFlowTokenExpired(token: string) {
+  const expiresAt = decodeTokenExpiry(token)
+  return Boolean(expiresAt && expiresAt <= Date.now())
+}
+
 function readFlow(type: AuthFlowType): StoredAuthFlow | null {
   if (!isBrowserAvailable()) {
     return null
@@ -58,6 +63,25 @@ function readFlow(type: AuthFlowType): StoredAuthFlow | null {
     }
 
     return parsed
+  } catch {
+    clearAuthFlow(type)
+    return null
+  }
+}
+
+function readFlowIncludingExpired(type: AuthFlowType): StoredAuthFlow | null {
+  if (!isBrowserAvailable()) {
+    return null
+  }
+
+  const raw = window.localStorage.getItem(FLOW_STORAGE_KEYS[type])
+  if (!raw) {
+    return null
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as StoredAuthFlow
+    return parsed.token ? parsed : null
   } catch {
     clearAuthFlow(type)
     return null
@@ -112,7 +136,25 @@ export function getAuthFlowToken(type: AuthFlowType) {
 }
 
 export function getAuthFlowEmail(type: AuthFlowType) {
-  return readFlow(type)?.email ?? ''
+  return readFlowIncludingExpired(type)?.email ?? ''
+}
+
+export function isAuthFlowExpired(type: AuthFlowType) {
+  const flow = readFlowIncludingExpired(type)
+  return Boolean(flow?.expiresAt && flow.expiresAt <= Date.now())
+}
+
+export function maskEmail(email: string) {
+  const normalized = email.trim()
+  const separator = normalized.lastIndexOf('@')
+  if (separator <= 0) {
+    return normalized
+  }
+
+  const local = normalized.slice(0, separator)
+  const domain = normalized.slice(separator)
+  const visiblePrefix = local.slice(0, Math.min(local.length, 1))
+  return `${visiblePrefix}***${domain}`
 }
 
 export function getAuthFlowRemainingSeconds(type: AuthFlowType) {

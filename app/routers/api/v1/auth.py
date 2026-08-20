@@ -347,6 +347,39 @@ async def resend_verify_email(
     }
 
 
+@router.post('/restart-verify-email')
+async def restart_verify_email(
+    payload: ForgotPasswordPayload,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    auth_service: AuthService = Depends(get_auth_service),
+):
+    """Start a fresh verification flow after the previous flow token expired.
+
+    The response intentionally has the same shape for unknown and already verified
+    addresses so the endpoint does not disclose whether an account exists.
+    """
+    client_ip = request.client.host if request.client else 'unknown'
+    rl_key = f'restart_email:{client_ip}'
+    attempt_count = int(await rate_limiter.increment(rl_key, settings.FORGOT_PWD_LOCKOUT_TTL))
+    if attempt_count > settings.FORGOT_PWD_MAX_ATTEMPTS:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail='Слишком много запросов. Попробуйте позже.')
+
+    user = await auth_service.repository.get_by_email(str(payload.email))
+    retry_after = 60
+    user_id = 0
+    if user and not user.is_active:
+        _, _, retry_after = await auth_service.send_email_verification(user, background_tasks)
+        user_id = user.id
+
+    return {
+        'success': True,
+        'message': 'Если аккаунт ожидает подтверждения, новый код отправлен на почту.',
+        'retry_after': retry_after,
+        'flow_token': _create_flow_token(user_id, 'verify_email', ttl_minutes=24 * 60),
+    }
+
+
 @router.get('/me')
 async def me(current_user=Depends(auth)):
     return {'user': serialize_user(current_user)}

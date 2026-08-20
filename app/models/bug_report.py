@@ -15,6 +15,11 @@ class BugReport(Base):
     session_id = Column(String(255), nullable=True, index=True)
     app_version = Column(String(100), nullable=True)
     user_agent = Column(String(1000), nullable=True)
+    console_summary = Column(Text, nullable=True)
+    network_summary = Column(Text, nullable=True)
+    fingerprint = Column(String(255), nullable=True, index=True)
+    status = Column(String(32), nullable=False, server_default='open', index=True)
+    session_elapsed_ms = Column(Integer, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
 
     user = relationship('Users', lazy='selectin')

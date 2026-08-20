@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import io
+from datetime import datetime, timedelta
 
 import math
 
@@ -109,6 +110,8 @@ async def list_documents(
     level_logic: str = 'or',
     result_logic: str = 'or',
     sort_by: str = 'newest',
+    date_from: str | None = Query(default=None),
+    date_to: str | None = Query(default=None),
     current_user=Depends(_check_admin_rights),
     db: AsyncSession = Depends(get_db),
 ):
@@ -135,6 +138,14 @@ async def list_documents(
         owner_courses=owner_courses,
         owner_groups=owner_groups,
     )
+
+    try:
+        if date_from:
+            stmt = stmt.filter(Achievement.created_at >= datetime.strptime(date_from, '%Y-%m-%d'))
+        if date_to:
+            stmt = stmt.filter(Achievement.created_at < datetime.strptime(date_to, '%Y-%m-%d') + timedelta(days=1))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail='Дата должна быть в формате ГГГГ-ММ-ДД.') from exc
 
     total_items = (await db.execute(select(func.count()).select_from(stmt.subquery()))).scalar() or 0
     achievements = (await db.execute(stmt.offset(offset).limit(page_size))).scalars().all()
@@ -231,7 +242,7 @@ async def delete_document(
     service = AchievementService(repo)
 
     try:
-        await service.delete(
+        action = await service.delete(
             document_id,
             current_user.id,
             current_user.role,
@@ -241,5 +252,4 @@ async def delete_document(
     except ValueError as exc:
         raise HTTPException(status_code=403, detail='Удаление документа недоступно.') from exc
 
-    return {'success': True}
-
+    return {'success': True, 'action': action}

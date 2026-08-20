@@ -10,8 +10,8 @@ export function ThemeToggle({ floating = false }: ThemeToggleProps) {
   const title = nextTheme === 'dark' ? 'Включить тёмную тему' : 'Включить светлую тему'
   const iconSrc =
     theme === 'dark'
-      ? '/static/theme/icons/suntolun-static.svg?v=1.11.17'
-      : '/static/theme/icons/luntosun-static.svg?v=1.11.17'
+      ? '/static/theme/icons/suntolun-static.svg?v=1.12.0'
+      : '/static/theme/icons/luntosun-static.svg?v=1.12.0'
 
   return (
     <button

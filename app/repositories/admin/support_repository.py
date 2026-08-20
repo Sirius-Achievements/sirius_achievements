@@ -126,7 +126,7 @@ class SupportTicketRepository(CrudRepository):
             if group_values:
                 stmt = stmt.filter(Users.study_group.in_(group_values))
 
-        allowed_sort = {'created_at', 'updated_at', 'subject', 'id'}
+        allowed_sort = {'created_at', 'updated_at', 'assigned_at', 'subject', 'id'}
         if sort_by in allowed_sort and hasattr(SupportTicket, sort_by):
             sort_attr = getattr(SupportTicket, sort_by)
             stmt = stmt.order_by(asc(sort_attr) if sort_order == 'asc' else desc(sort_attr))
@@ -245,7 +245,7 @@ class SupportTicketRepository(CrudRepository):
             if group_values:
                 stmt = stmt.filter(Users.study_group.in_(group_values))
 
-        _ALLOWED_SORT = {"created_at", "updated_at", "status", "subject", "id"}
+        _ALLOWED_SORT = {"created_at", "updated_at", "assigned_at", "status", "subject", "id"}
         if sort_by in _ALLOWED_SORT and hasattr(SupportTicket, sort_by):
             sort_attr = getattr(SupportTicket, sort_by)
             stmt = stmt.order_by(asc(sort_attr) if sort_order == 'asc' else desc(sort_attr))

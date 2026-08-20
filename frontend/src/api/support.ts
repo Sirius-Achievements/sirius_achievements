@@ -6,6 +6,10 @@ export const supportApi = {
     return client.get<SupportListResponse>('/support', { params: { view } })
   },
 
+  similar(query: string) {
+    return client.get<{ tickets: SupportTicket[] }>('/support/similar', { params: { q: query } })
+  },
+
   create(formData: FormData) {
     return client.post<{ ticket: SupportTicket }>('/support', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
@@ -53,8 +57,8 @@ export const supportApi = {
     })
   },
 
-  closeTicket(ticketId: number) {
-    return client.post<{ success: boolean; ticket: SupportTicket }>(`/moderation/support/${ticketId}/close`)
+  closeTicket(ticketId: number, resolution: string) {
+    return client.post<{ success: boolean; ticket: SupportTicket }>(`/moderation/support/${ticketId}/close`, { resolution })
   },
 
   reopenTicket(ticketId: number, sessionDuration?: string) {

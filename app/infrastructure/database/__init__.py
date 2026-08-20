@@ -43,5 +43,6 @@ try:
     from app.models.audit_log import AuditLog
     from app.models.user_note import UserNote
     from app.models.bug_report import BugReport
+    from app.models.resume_version import ResumeVersion
 except ImportError:
     pass

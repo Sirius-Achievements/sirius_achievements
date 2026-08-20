@@ -27,11 +27,12 @@ class SupportService:
             upload_dir=settings.UPLOAD_DIR_SUPPORT,
         )
 
-    async def create_ticket(self, user_id: int, subject: str) -> SupportTicket:
+    async def create_ticket(self, user_id: int, subject: str, category: str = 'technical') -> SupportTicket:
         ticket = SupportTicket(
             user_id=user_id,
             moderator_id=None,
             subject=subject,
+            category=category,
             status=SupportTicketStatus.OPEN,
             assigned_at=None,
             session_expires_at=None,
@@ -49,6 +50,7 @@ class SupportService:
         subject: str,
         text: str | None = None,
         file=None,
+        category: str = 'technical',
     ) -> SupportTicket:
         clean_subject = (subject or "").strip()[:255]
         if not clean_subject:
@@ -62,11 +64,13 @@ class SupportService:
             user_id=user_id,
             moderator_id=None,
             subject=clean_subject,
+            category=category,
             status=SupportTicketStatus.OPEN,
             assigned_at=None,
             session_expires_at=None,
             closed_at=None,
             archived_at=None,
+            moderator_unread_count=1,
         )
         self.db.add(ticket)
         await self.db.flush()
@@ -114,6 +118,7 @@ class SupportService:
             session_expires_at=calculate_session_expiration(session_duration),
             closed_at=None,
             archived_at=None,
+            student_unread_count=1,
         )
         self.db.add(ticket)
         await self.db.flush()
@@ -164,6 +169,7 @@ class SupportService:
         file=None,
         is_from_moderator: bool = False,
         session_duration: str | None = None,
+        reply_to_id: int | None = None,
     ) -> SupportMessage:
         ticket = await self.ticket_repo.find(ticket_id)
         if not ticket:
@@ -174,6 +180,8 @@ class SupportService:
             if is_from_moderator:
                 raise ValueError("Сначала откройте обращение снова")
             raise ValueError("Обращение закрыто")
+        if is_from_moderator and ticket.moderator_id and ticket.moderator_id != sender_id:
+            raise ValueError("Обращение уже принято другим модератором")
 
         clean_text = text.strip() if text and text.strip() else None
         file_path = None
@@ -189,14 +197,14 @@ class SupportService:
             text=encrypt_text(clean_text),
             file_path=file_path,
             is_from_moderator=is_from_moderator,
+            reply_to_id=reply_to_id,
         )
         self.db.add(message)
 
         now = datetime.now(timezone.utc)
         ticket.updated_at = now
         if is_from_moderator:
-            if ticket.moderator_id and ticket.moderator_id != sender_id:
-                raise ValueError("РћР±СЂР°С‰РµРЅРёРµ СѓР¶Рµ РїСЂРёРЅСЏС‚Рѕ РґСЂСѓРіРёРј РјРѕРґРµСЂР°С‚РѕСЂРѕРј")
+            ticket.student_unread_count = int(getattr(ticket, 'student_unread_count', 0) or 0) + 1
             if ticket.moderator_id is None:
                 ticket.moderator_id = sender_id
                 ticket.assigned_at = now
@@ -204,12 +212,14 @@ class SupportService:
                 ticket.status = SupportTicketStatus.IN_PROGRESS
             ticket.closed_at = None
             ticket.session_expires_at = calculate_session_expiration(session_duration)
+        else:
+            ticket.moderator_unread_count = int(getattr(ticket, 'moderator_unread_count', 0) or 0) + 1
 
         await self.db.commit()
         await self.db.refresh(message)
         return message
 
-    async def close_ticket(self, ticket_id: int):
+    async def close_ticket(self, ticket_id: int, resolution: str | None = None):
         ticket = await self.ticket_repo.find(ticket_id)
         if not ticket:
             return None
@@ -221,6 +231,7 @@ class SupportService:
         ticket.closed_at = now
         ticket.session_expires_at = None
         ticket.updated_at = now
+        ticket.resolution = resolution
         await self.db.commit()
         return ticket
 

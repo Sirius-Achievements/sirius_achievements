@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useSearchParams } from 'react-router-dom'
 
 import { achievementsApi } from '@/api/achievements'
 import { documentsApi } from '@/api/documents'
+import { pointsApi, type PointsRulesResponse } from '@/api/points'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { PaginationFooter } from '@/components/ui/PaginationFooter'
 import { useToast } from '@/hooks/useToast'
@@ -34,6 +36,13 @@ interface AchievementFormState {
 const MAX_FILE_SIZE = 10 * 1024 * 1024
 const FILE_ACCEPT = 'image/*,application/pdf,.pdf,.doc,.docx,.pptx,.xlsx'
 const ACHIEVEMENTS_PAGE_SIZE = 10
+
+function seasonLabel(createdAt: string) {
+  const date = new Date(createdAt)
+  const year = date.getFullYear()
+  const seasonStart = date.getMonth() >= 8 ? year : year - 1
+  return `Сезон ${seasonStart}/${seasonStart + 1}`
+}
 
 function getDefaultForm(): AchievementFormState {
   return {
@@ -88,6 +97,30 @@ function resultClass(result?: string | null) {
   }
 }
 
+function AchievementTimeline({ item }: { item: Achievement }) {
+  const taken = Boolean(item.moderator_id) || item.status !== AchievementStatus.PENDING
+  const decided = [AchievementStatus.APPROVED, AchievementStatus.REJECTED, AchievementStatus.REVISION, AchievementStatus.ARCHIVED].includes(item.status)
+  const stages = [
+    ['Загружено', true],
+    ['Взято модератором', taken],
+    ['Решение', decided],
+  ] as const
+
+  return (
+    <div className="mt-2 flex max-w-sm items-center" aria-label="История статуса документа">
+      {stages.map(([label, complete], index) => (
+        <Fragment key={label}>
+          {index > 0 ? <span className={`h-px flex-1 ${complete ? 'bg-indigo-500' : 'bg-slate-200'}`} /> : null}
+          <span className="flex items-center gap-1 text-[9px] text-slate-500" title={label}>
+            <span className={`h-2 w-2 rounded-full ${complete ? 'bg-indigo-500' : 'border border-slate-300 bg-surface'}`} />
+            <span className="hidden lg:inline">{label}</span>
+          </span>
+        </Fragment>
+      ))}
+    </div>
+  )
+}
+
 function emitPreview(item: Achievement) {
   if (item.file_path) {
     openDocumentPreview(item.id, item.file_path)
@@ -126,10 +159,11 @@ function validateFile(file: File) {
 
 export function AchievementsPage() {
   const { pushToast } = useToast()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [items, setItems] = useState<Achievement[]>([])
   const [query, setQuery] = useState('')
-  const [status, setStatus] = useState('')
-  const [category, setCategory] = useState('')
+  const [status, setStatus] = useState(() => searchParams.get('status') ?? '')
+  const [category, setCategory] = useState(() => searchParams.get('category') ?? '')
   const [level, setLevel] = useState('')
   const [result, setResult] = useState('')
   const [sortBy, setSortBy] = useState('newest')
@@ -138,7 +172,11 @@ export function AchievementsPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [suggestions, setSuggestions] = useState<SuggestionItem[]>([])
-  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [showCreateModal, setShowCreateModal] = useState(() => searchParams.get('new') === '1')
+  const [createStep, setCreateStep] = useState<1 | 2 | 3>(1)
+  const [pointRules, setPointRules] = useState<PointsRulesResponse | null>(null)
+  const [duplicateSuggestions, setDuplicateSuggestions] = useState<SuggestionItem[]>([])
+  const [groupBySeason, setGroupBySeason] = useState(true)
   const [createForm, setCreateForm] = useState<AchievementFormState>(getDefaultForm)
   const [createFileText, setCreateFileText] = useState('')
   const createFileInputRef = useRef<HTMLInputElement | null>(null)
@@ -151,6 +189,7 @@ export function AchievementsPage() {
   const [reviseFileText, setReviseFileText] = useState('')
   const [isSubmittingRevision, setIsSubmittingRevision] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<Achievement | null>(null)
+  const projectedPoints = pointRules?.matrix.find((row) => row.level === createForm.level)?.scores[createForm.result] ?? 0
 
   const filters = useMemo(
     () => ({
@@ -209,14 +248,75 @@ export function AchievementsPage() {
     }
   }, [query])
 
+  useEffect(() => {
+    if (!showCreateModal || pointRules) return
+    void pointsApi.getRules().then((response) => setPointRules(response.data)).catch(() => setPointRules(null))
+  }, [pointRules, showCreateModal])
+
+  useEffect(() => {
+    if (!showCreateModal || createStep !== 2 || createForm.title.trim().length < 4) {
+      setDuplicateSuggestions([])
+      return
+    }
+    const timer = window.setTimeout(async () => {
+      try {
+        const response = await achievementsApi.search(createForm.title.trim())
+        setDuplicateSuggestions(response.data)
+      } catch {
+        setDuplicateSuggestions([])
+      }
+    }, 350)
+    return () => window.clearTimeout(timer)
+  }, [createForm.title, createStep, showCreateModal])
+
   const resetCreateForm = () => {
     setCreateForm(getDefaultForm())
     setCreateFileText('')
+    setCreateStep(1)
+    setDuplicateSuggestions([])
   }
 
   const closeCreateModal = () => {
     setShowCreateModal(false)
     resetCreateForm()
+    const next = new URLSearchParams(searchParams)
+    next.delete('new')
+    setSearchParams(next, { replace: true })
+  }
+
+  const openCreateModal = () => {
+    const requestedCategory = searchParams.get('category')
+    setCreateForm((current) => ({
+      ...current,
+      category: requestedCategory && Object.values(AchievementCategory).includes(requestedCategory as AchievementCategory)
+        ? requestedCategory
+        : current.category,
+    }))
+    setCreateStep(1)
+    setShowCreateModal(true)
+  }
+
+  const goToNextCreateStep = () => {
+    if (createStep === 1) {
+      const trimmedUrl = createForm.external_url.trim()
+      if (!createForm.file && !trimmedUrl) {
+        setError('На первом шаге прикрепите файл или укажите ссылку.')
+        return
+      }
+      if (trimmedUrl && !/^https?:\/\//i.test(trimmedUrl)) {
+        setError('Ссылка должна начинаться с http:// или https://')
+        return
+      }
+      setError(null)
+      setCreateStep(2)
+      return
+    }
+    if (!createForm.title.trim()) {
+      setError('Укажите название достижения.')
+      return
+    }
+    setError(null)
+    setCreateStep(3)
   }
 
   const closeReviseModal = () => {
@@ -350,10 +450,12 @@ export function AchievementsPage() {
     if (!deleteTarget) return
 
     try {
-      await achievementsApi.delete(deleteTarget.id)
+      const { data } = await achievementsApi.delete(deleteTarget.id)
       pushToast({
-        title: 'Документ удалён',
-        message: `Документ «${deleteTarget.title}» удалён.`,
+        title: data.action === 'archived' ? 'Документ архивирован' : 'Документ удалён',
+        message: data.action === 'archived'
+          ? `«${deleteTarget.title}» участвовал в рейтинге, поэтому сохранён в архиве.`
+          : `Документ «${deleteTarget.title}» удалён.`,
         tone: 'success',
       })
       setDeleteTarget(null)
@@ -372,7 +474,7 @@ export function AchievementsPage() {
         </div>
         <button
           type="button"
-          onClick={() => setShowCreateModal(true)}
+          onClick={openCreateModal}
           className="w-full sm:w-auto bg-indigo-600 text-white px-5 py-2.5 rounded-lg font-medium text-sm hover:bg-indigo-700 transition-colors flex items-center justify-center shadow-sm"
         >
           <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -443,9 +545,7 @@ export function AchievementsPage() {
               className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-700 focus:bg-surface focus:border-indigo-600 outline-none h-[38px]"
             >
               <option value="">Все статусы</option>
-              {Object.values(AchievementStatus)
-                .filter((item) => item !== AchievementStatus.ARCHIVED)
-                .map((item) => (
+              {Object.values(AchievementStatus).map((item) => (
                   <option key={item} value={item}>
                     {statusLabel(item)}
                   </option>
@@ -543,6 +643,13 @@ export function AchievementsPage() {
       </div>
 
       <div className="bg-surface rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+        <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-4 py-2.5">
+          <span className="text-xs text-slate-500">Документы текущей выборки</span>
+          <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-600">
+            <input type="checkbox" checked={groupBySeason} onChange={(event) => setGroupBySeason(event.target.checked)} className="theme-accent-checkbox" />
+            Группировать по сезонам
+          </label>
+        </div>
         {isLoading ? (
           <div className="py-16">
             <LoadingSpinner />
@@ -562,9 +669,15 @@ export function AchievementsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {items.map((item) => (
+                  {items.map((item, index) => {
+                    const season = seasonLabel(item.created_at)
+                    const previousSeason = index > 0 ? seasonLabel(items[index - 1].created_at) : null
+                    return (
+                    <Fragment key={item.id}>
+                    {groupBySeason && season !== previousSeason ? (
+                      <tr className="bg-slate-50/70"><td colSpan={6} className="px-5 py-2 text-xs font-bold uppercase tracking-wider text-slate-500">{season}</td></tr>
+                    ) : null}
                     <tr
-                      key={item.id}
                       className={`transition-colors ${
                         item.status === AchievementStatus.REVISION ? 'bg-yellow-50/30' : 'hover:bg-slate-50'
                       }`}
@@ -625,14 +738,8 @@ export function AchievementsPage() {
                           </a>
                         ) : null}
                         {item.rejection_reason ? (
-                          <div
-                            className={`text-[10px] mt-0.5 break-words whitespace-normal max-w-xs ${
-                              item.status === AchievementStatus.REVISION
-                                ? 'text-yellow-700 font-medium'
-                                : 'text-red-500'
-                            }`}
-                          >
-                            <span className="font-bold">Комментарий:</span> {item.rejection_reason}
+                          <div className="mt-2 max-w-xs whitespace-normal rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-[11px] text-slate-700">
+                            <span className="font-bold text-indigo-700">Комментарий модератора:</span> {item.rejection_reason}
                           </div>
                         ) : null}
                       </td>
@@ -651,6 +758,7 @@ export function AchievementsPage() {
                         >
                           {statusLabel(item.status)}
                         </span>
+                        <AchievementTimeline item={item} />
                       </td>
                       <td
                         className={`px-5 py-3 font-bold ${
@@ -687,13 +795,19 @@ export function AchievementsPage() {
                         </button>
                       </td>
                     </tr>
-                  ))}
+                    </Fragment>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
             <div className="sm:hidden divide-y divide-slate-100">
-              {items.map((item) => (
-                <div key={item.id} className="p-4">
+              {items.map((item, index) => {
+                const season = seasonLabel(item.created_at)
+                const previousSeason = index > 0 ? seasonLabel(items[index - 1].created_at) : null
+                return <Fragment key={item.id}>
+                {groupBySeason && season !== previousSeason ? <div className="bg-slate-50 px-4 py-2 text-xs font-bold uppercase tracking-wider text-slate-500">{season}</div> : null}
+                <div className="p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="font-medium text-slate-800">{item.title}</div>
@@ -729,14 +843,12 @@ export function AchievementsPage() {
                   </div>
 
                   {item.rejection_reason ? (
-                    <div
-                      className={`text-[11px] mt-2 ${
-                        item.status === AchievementStatus.REVISION ? 'text-yellow-700 font-medium' : 'text-red-500'
-                      }`}
-                    >
-                      Комментарий: {item.rejection_reason}
+                    <div className="mt-3 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-slate-700">
+                      <span className="font-bold text-indigo-700">Комментарий модератора:</span> {item.rejection_reason}
                     </div>
                   ) : null}
+
+                  <AchievementTimeline item={item} />
 
                   <div className="flex items-center justify-between mt-3">
                     <div className={`font-bold ${item.points > 0 ? 'text-indigo-600' : 'text-slate-400'}`}>
@@ -782,7 +894,8 @@ export function AchievementsPage() {
                     </div>
                   </div>
                 </div>
-              ))}
+                </Fragment>
+              })}
             </div>
           </>
         ) : (
@@ -837,6 +950,31 @@ export function AchievementsPage() {
 
             <form onSubmit={handleCreateSubmit} className="overflow-y-auto">
               <div className="p-6 space-y-5">
+                <ol className="grid grid-cols-3 gap-2" aria-label="Шаги добавления достижения">
+                  {['Файл', 'Информация', 'Проверка'].map((label, index) => {
+                    const step = (index + 1) as 1 | 2 | 3
+                    const isActive = createStep === step
+                    const isComplete = createStep > step
+                    return (
+                      <li
+                        key={label}
+                        className={`rounded-lg border px-3 py-2 text-center text-xs font-semibold ${isActive || isComplete ? '' : 'border-slate-200 text-slate-400'}`}
+                        style={isActive ? {
+                          borderColor: 'var(--theme-accent)',
+                          backgroundColor: 'var(--theme-accent-soft)',
+                          color: 'var(--theme-accent-strong)',
+                        } : isComplete ? {
+                          borderColor: 'var(--theme-accent)',
+                          color: 'var(--theme-accent)',
+                        } : undefined}
+                      >
+                        {step}. {label}
+                      </li>
+                    )
+                  })}
+                </ol>
+
+                {createStep === 2 ? <>
                 <div>
                   <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
                     Название
@@ -849,6 +987,12 @@ export function AchievementsPage() {
                     placeholder="Например: Победитель олимпиады..."
                     className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:bg-surface focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all placeholder:text-slate-400"
                   />
+                  {duplicateSuggestions.length ? (
+                    <div className="mt-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-slate-700">
+                      <p className="font-semibold text-indigo-700">Возможный дубликат</p>
+                      <p className="mt-1">У вас уже есть похожие документы: {duplicateSuggestions.slice(0, 3).map((item) => item.text).join(', ')}. Проверьте их перед отправкой.</p>
+                    </div>
+                  ) : null}
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div>
@@ -917,6 +1061,9 @@ export function AchievementsPage() {
                   />
                 </div>
 
+                </> : null}
+
+                {createStep === 1 ? <>
                 <div>
                   <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
                     Документ (Фото или PDF)
@@ -968,25 +1115,52 @@ export function AchievementsPage() {
                     Укажите ссылку на грамоту или страницу подтверждения участия, если нет файла. Можно указать и то, и другое — главное чтобы было заполнено хотя бы одно поле.
                   </p>
                 </div>
+                </> : null}
+
+                {createStep === 3 ? (
+                  <div className="space-y-4">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <h4 className="text-sm font-semibold text-slate-800">Предварительная проверка</h4>
+                      <dl className="mt-3 grid gap-3 text-xs sm:grid-cols-2">
+                        <div><dt className="text-slate-500">Документ</dt><dd className="mt-1 font-medium text-slate-800">{createFileText || createForm.external_url || 'Не указан'}</dd></div>
+                        <div><dt className="text-slate-500">Название</dt><dd className="mt-1 font-medium text-slate-800">{createForm.title}</dd></div>
+                        <div><dt className="text-slate-500">Направление</dt><dd className="mt-1 font-medium text-slate-800">{createForm.category}</dd></div>
+                        <div><dt className="text-slate-500">Уровень и результат</dt><dd className="mt-1 font-medium text-slate-800">{createForm.level} · {createForm.result}</dd></div>
+                      </dl>
+                    </div>
+                    <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4">
+                      <div className="text-xs font-semibold uppercase tracking-wide text-indigo-700">Предварительный расчёт</div>
+                      <div className="mt-1 text-3xl font-bold text-indigo-700">до {projectedPoints} баллов</div>
+                      <p className="mt-1 text-xs leading-relaxed text-slate-600">Это ориентир по выбранным уровню и результату. Баллы начислит модератор после проверки подтверждения.</p>
+                    </div>
+                  </div>
+                ) : null}
               </div>
 
               <div className="p-4 border-t border-slate-100 bg-slate-50 flex flex-col-reverse sm:flex-row justify-end gap-3">
                 <button
                   type="button"
-                  onClick={closeCreateModal}
+                  onClick={() => createStep === 1 ? closeCreateModal() : setCreateStep((createStep - 1) as 1 | 2)}
                   className="w-full sm:w-auto px-6 py-2.5 border border-slate-200 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 text-center transition-colors bg-surface"
                 >
-                  Отмена
+                  {createStep === 1 ? 'Отмена' : 'Назад'}
                 </button>
-                <button
+                {createStep < 3 ? <button
+                  type="button"
+                  onClick={goToNextCreateStep}
+                  className="w-full rounded-lg bg-indigo-600 px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-indigo-700 sm:w-auto"
+                >
+                  Продолжить
+                </button> : <button
                   type="submit"
                   disabled={isSubmittingCreate}
                   className={`w-full sm:w-auto px-6 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors ${
                     isSubmittingCreate ? 'opacity-70 cursor-not-allowed' : ''
                   }`}
                 >
-                  {isSubmittingCreate ? 'Загрузка...' : 'Сохранить'}
+                  {isSubmittingCreate ? 'Отправляем...' : 'Отправить на проверку'}
                 </button>
+                }
               </div>
             </form>
           </div>
@@ -1107,9 +1281,11 @@ export function AchievementsPage() {
                 />
               </svg>
             </div>
-            <h3 className="text-lg font-bold text-slate-900 mb-2">Удалить документ?</h3>
+            <h3 className="text-lg font-bold text-slate-900 mb-2">{deleteTarget.status === AchievementStatus.APPROVED || deleteTarget.points > 0 ? 'Архивировать документ?' : 'Удалить документ?'}</h3>
             <p className="text-sm text-slate-500 mb-6">
-              Документ «{deleteTarget.title}» будет удалён навсегда. Отменить это действие нельзя.
+              {deleteTarget.status === AchievementStatus.APPROVED || deleteTarget.points > 0
+                ? `Документ «${deleteTarget.title}» уже участвовал в рейтинге. Он исчезнет из активного списка, но останется в архиве и истории сезона.`
+                : `Документ «${deleteTarget.title}» будет удалён навсегда. Отменить это действие нельзя.`}
             </p>
             <div className="flex gap-3">
               <button
@@ -1124,7 +1300,7 @@ export function AchievementsPage() {
                 onClick={() => void handleDeleteConfirm()}
                 className="flex-1 px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-xl transition-colors shadow-sm shadow-red-600/30"
               >
-                Удалить
+                {deleteTarget.status === AchievementStatus.APPROVED || deleteTarget.points > 0 ? 'В архив' : 'Удалить'}
               </button>
             </div>
           </div>

@@ -1,4 +1,6 @@
+import hashlib
 import math
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
@@ -21,6 +23,16 @@ class BugReportPayload(BaseModel):
     page_url: str = Field(min_length=1, max_length=2048)
     session_id: str | None = Field(default=None, max_length=255)
     app_version: str | None = Field(default=None, max_length=100)
+    console_summary: str | None = Field(default=None, max_length=8000)
+    network_summary: str | None = Field(default=None, max_length=8000)
+    session_elapsed_ms: int | None = Field(default=None, ge=0)
+
+
+def _fingerprint(page_url: str, description: str | None) -> str:
+    path = urlsplit(page_url).path.rstrip('/') or '/'
+    words = sorted({word.casefold() for word in (description or '').split() if len(word) >= 4})[:12]
+    digest = hashlib.sha256(f'{path}|{" ".join(words)}'.encode()).hexdigest()[:20]
+    return f'{path[:180]}:{digest}'
 
 
 async def _require_super_admin(current_user=Depends(auth)):
@@ -38,6 +50,11 @@ def _serialize_report(report: BugReport) -> dict:
         'session_id': report.session_id,
         'app_version': report.app_version,
         'user_agent': report.user_agent,
+        'console_summary': report.console_summary,
+        'network_summary': report.network_summary,
+        'fingerprint': report.fingerprint,
+        'status': report.status,
+        'session_elapsed_ms': report.session_elapsed_ms,
         'created_at': report.created_at.isoformat() if report.created_at else None,
         'user': (
             {
@@ -71,6 +88,10 @@ async def create_bug_report(
         session_id=payload.session_id,
         app_version=payload.app_version,
         user_agent=request.headers.get('user-agent', '')[:1000] or None,
+        console_summary=(payload.console_summary or '').strip() or None,
+        network_summary=(payload.network_summary or '').strip() or None,
+        fingerprint=_fingerprint(payload.page_url, payload.description),
+        session_elapsed_ms=payload.session_elapsed_ms,
     )
     db.add(report)
     await db.commit()
@@ -119,3 +140,24 @@ async def list_bug_reports(
         'total': total,
         'total_pages': max(1, math.ceil(total / page_size)),
     }
+
+
+@router.post('/{report_id}/close-similar')
+async def close_similar_bug_reports(
+    report_id: int,
+    current_user=Depends(_require_super_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    report = await db.get(BugReport, report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail='Баг-репорт не найден.')
+    stmt = select(BugReport).filter(BugReport.status == 'open')
+    if report.fingerprint:
+        stmt = stmt.filter(BugReport.fingerprint == report.fingerprint)
+    else:
+        stmt = stmt.filter(BugReport.id == report.id)
+    similar = (await db.execute(stmt)).scalars().all()
+    for item in similar:
+        item.status = 'closed'
+    await db.commit()
+    return {'success': True, 'closed_count': len(similar)}

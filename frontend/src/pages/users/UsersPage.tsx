@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 
 import { moderationApi } from '@/api/moderation'
 import { usersApi } from '@/api/users'
@@ -37,6 +37,7 @@ function statusClass(status: string, reviewedById?: number, currentUserId?: numb
 }
 
 export function UsersPage() {
+  const location = useLocation()
   const { user: currentUser } = useAuth()
   const { pushToast } = useToast()
   const [items, setItems] = useState<User[]>([])
@@ -51,12 +52,21 @@ export function UsersPage() {
   const [sortBy, setSortBy] = useState('newest')
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
+  const [totalItems, setTotalItems] = useState(0)
+  const [selectedIds, setSelectedIds] = useState<number[]>([])
+  const [visibleColumns, setVisibleColumns] = useState<string[]>([
+    'stream',
+    'status',
+    'moderator',
+    'created',
+  ])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [suggestions, setSuggestions] = useState<SearchSuggestionItem[]>([])
   const [aiMode, setAiMode] = useState(false)
   const [aiDescription, setAiDescription] = useState('')
   const [aiActiveDescription, setAiActiveDescription] = useState<string | null>(null)
+  const [aiSearchMode, setAiSearchMode] = useState<'ai' | 'fallback' | null>(null)
 
   const filters = useMemo(
     () => ({
@@ -91,6 +101,7 @@ export function UsersPage() {
       setStatuses(data.statuses)
       setEducationLevels(data.education_levels)
       setTotalPages(data.total_pages)
+      setTotalItems(data.total_items)
     } catch (loadError) {
       setError(getErrorMessage(loadError, 'Не удалось загрузить список пользователей.'))
     } finally {
@@ -126,7 +137,9 @@ export function UsersPage() {
       setStatuses(data.statuses)
       setEducationLevels(data.education_levels)
       setTotalPages(data.total_pages)
+      setTotalItems(data.total_items)
       setAiActiveDescription(trimmed)
+      setAiSearchMode(data.search_mode ?? 'ai')
     } catch (aiError) {
       setError(getErrorMessage(aiError, 'AI-поиск временно недоступен.'))
     } finally {
@@ -140,6 +153,7 @@ export function UsersPage() {
       if (!next) {
         setAiActiveDescription(null)
         setAiDescription('')
+        setAiSearchMode(null)
       }
       return next
     })
@@ -183,7 +197,43 @@ export function UsersPage() {
     setAiMode(false)
     setAiDescription('')
     setAiActiveDescription(null)
+    setAiSearchMode(null)
     setPage(1)
+  }
+
+  const profileTarget = (id: number) =>
+    `/users/${id}?from=users&return=${encodeURIComponent(`${location.pathname}${location.search}`)}`
+
+  const exportUsers = (rows: User[]) => {
+    if (!rows.length) return
+    const escapeCell = (value: unknown) => `"${String(value ?? '').split('"').join('""')}"`
+    const lines = [
+      ['ID', 'Имя', 'Фамилия', 'Email', 'Обучение', 'Курс', 'Группа', 'Роль', 'Статус'],
+      ...rows.map((item) => [
+        item.id,
+        item.first_name,
+        item.last_name,
+        item.email,
+        item.education_level ?? '',
+        item.course ?? '',
+        item.study_group ?? '',
+        roleLabel(item.role),
+        statusLabel(item.status, item.reviewed_by_id, currentUser?.id),
+      ]),
+    ]
+    const csv = `\uFEFF${lines.map((line) => line.map(escapeCell).join(';')).join('\n')}`
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `users-selection-${new Date().toISOString().slice(0, 10)}.csv`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const toggleColumn = (column: string) => {
+    setVisibleColumns((current) =>
+      current.includes(column) ? current.filter((item) => item !== column) : [...current, column],
+    )
   }
 
   const handleTake = async (targetUser: User) => {
@@ -374,8 +424,44 @@ export function UsersPage() {
         <div className="rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-2.5 text-xs text-indigo-700">
           ИИ-поиск по запросу «{aiActiveDescription}»: найдено {items.length}{' '}
           {items.length === 1 ? 'студент' : 'студентов'}.
+          {aiSearchMode === 'fallback' ? ' Локальная нейросеть не запущена, поэтому использован быстрый поиск по данным профиля и подтверждённым достижениям.' : ''}
         </div>
       ) : null}
+
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-surface px-4 py-3">
+        <div className="text-sm text-slate-600">
+          Найдено: <strong className="text-slate-900">{aiMode ? items.length : totalItems}</strong>
+          {selectedIds.length ? <span className="ml-2">· выбрано {selectedIds.length}</span> : null}
+        </div>
+        <div className="flex flex-wrap items-center gap-3 text-xs">
+          <details className="relative">
+            <summary className="cursor-pointer rounded-lg border border-slate-200 px-3 py-2 text-slate-600">
+              Колонки
+            </summary>
+            <div className="absolute right-0 z-20 mt-2 w-48 space-y-2 rounded-xl border border-slate-200 bg-surface p-3 shadow-lg">
+              {[
+                ['stream', 'Поток'],
+                ['status', 'Статус'],
+                ['moderator', 'Модератор'],
+                ['created', 'Создано'],
+              ].map(([key, label]) => (
+                <label key={key} className="flex cursor-pointer items-center gap-2 text-slate-600">
+                  <input type="checkbox" checked={visibleColumns.includes(key)} onChange={() => toggleColumn(key)} />
+                  {label}
+                </label>
+              ))}
+            </div>
+          </details>
+          <button
+            type="button"
+            onClick={() => exportUsers(selectedIds.length ? items.filter((item) => selectedIds.includes(item.id)) : items)}
+            disabled={!items.length}
+            className="rounded-lg border border-slate-200 px-3 py-2 font-medium text-slate-600 disabled:opacity-50"
+          >
+            {selectedIds.length ? 'Экспортировать выбранных' : 'Экспортировать текущую выборку'}
+          </button>
+        </div>
+      </div>
 
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-surface shadow-sm">
         {isLoading ? (
@@ -388,29 +474,56 @@ export function UsersPage() {
             <table className="w-full whitespace-nowrap text-left text-sm">
               <thead className="border-b border-slate-100 bg-slate-50 text-[10px] uppercase tracking-wider text-slate-400">
                 <tr>
+                  <th className="px-3 py-3">
+                    <input
+                      type="checkbox"
+                      aria-label="Выбрать всех на странице"
+                      checked={items.length > 0 && items.every((item) => selectedIds.includes(item.id))}
+                      onChange={(event) =>
+                        setSelectedIds((current) =>
+                          event.target.checked
+                            ? Array.from(new Set([...current, ...items.map((item) => item.id)]))
+                            : current.filter((id) => !items.some((item) => item.id === id)),
+                        )
+                      }
+                    />
+                  </th>
                   <th className="px-5 py-3 font-bold">#</th>
                   <th className="px-5 py-3 font-bold">Пользователь</th>
-                  <th className="px-5 py-3 font-bold">Поток</th>
-                  <th className="px-5 py-3 font-bold">Статус</th>
-                  <th className="px-5 py-3 font-bold">Модератор</th>
-                  <th className="px-5 py-3 font-bold">Создано</th>
+                  {visibleColumns.includes('stream') ? <th className="px-5 py-3 font-bold">Поток</th> : null}
+                  {visibleColumns.includes('status') ? <th className="px-5 py-3 font-bold">Статус</th> : null}
+                  {visibleColumns.includes('moderator') ? <th className="px-5 py-3 font-bold">Модератор</th> : null}
+                  {visibleColumns.includes('created') ? <th className="px-5 py-3 font-bold">Создано</th> : null}
                   <th className="px-5 py-3 text-right font-bold">Действие</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {items.map((item, index) => (
                   <tr key={item.id} className="transition-colors hover:bg-slate-50">
+                    <td className="px-3 py-3">
+                      <input
+                        type="checkbox"
+                        aria-label={`Выбрать ${item.first_name} ${item.last_name}`}
+                        checked={selectedIds.includes(item.id)}
+                        onChange={() => setSelectedIds((current) => current.includes(item.id) ? current.filter((id) => id !== item.id) : [...current, item.id])}
+                      />
+                    </td>
                     <td className="px-5 py-3 text-xs text-slate-400">{(page - 1) * USERS_PAGE_SIZE + index + 1}</td>
                     <td className="px-5 py-3">
                       <Link
-                        to={`/users/${item.id}`}
+                        to={profileTarget(item.id)}
                         className="block font-medium text-slate-800 transition-colors hover:text-indigo-600"
                       >
                         {item.first_name} {item.last_name}
                       </Link>
                       <div className="text-[10px] text-slate-400">{item.email}</div>
+                      {aiMode && item.match_reason ? (
+                        <div className="mt-1 max-w-[320px] whitespace-normal rounded-md bg-indigo-50 px-2 py-1 text-[10px] text-indigo-700">
+                          Почему найден: {item.match_reason}
+                        </div>
+                      ) : null}
                     </td>
-                    <td className="px-5 py-3">
+                    {visibleColumns.includes('stream') ? <td className="px-5 py-3">
                       {item.education_level ? (
                         <>
                           <span className="block text-xs text-slate-700">{item.education_level}</span>
@@ -422,8 +535,8 @@ export function UsersPage() {
                       ) : (
                         <span className="text-xs text-slate-400">—</span>
                       )}
-                    </td>
-                    <td className="px-5 py-3">
+                    </td> : null}
+                    {visibleColumns.includes('status') ? <td className="px-5 py-3">
                       <span className="mb-1 inline-flex rounded border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600">
                         {roleLabel(item.role)}
                       </span>
@@ -433,8 +546,8 @@ export function UsersPage() {
                       >
                         {statusLabel(item.status, item.reviewed_by_id, currentUser?.id)}
                       </span>
-                    </td>
-                    <td className="px-5 py-3 text-xs text-slate-500">
+                    </td> : null}
+                    {visibleColumns.includes('moderator') ? <td className="px-5 py-3 text-xs text-slate-500">
                       {item.status === 'pending' && item.reviewed_by_id ? (
                         item.reviewed_by_id === currentUser?.id ? (
                           <div className="font-medium text-slate-700">Вы</div>
@@ -446,8 +559,8 @@ export function UsersPage() {
                       ) : (
                         <span className="text-slate-400">—</span>
                       )}
-                    </td>
-                    <td className="px-5 py-3 text-xs text-slate-500">{formatDateTime(item.created_at)}</td>
+                    </td> : null}
+                    {visibleColumns.includes('created') ? <td className="px-5 py-3 text-xs text-slate-500">{formatDateTime(item.created_at)}</td> : null}
                     <td className="px-5 py-3 text-right">
                       <div className="flex items-center justify-end gap-2">
                         {item.status === 'deleted' ? (
@@ -475,7 +588,7 @@ export function UsersPage() {
                           </Link>
                         ) : null}
                         <Link
-                          to={`/users/${item.id}`}
+                          to={profileTarget(item.id)}
                           className="text-xs font-medium text-slate-500 transition-colors hover:text-indigo-600"
                         >
                           Профиль

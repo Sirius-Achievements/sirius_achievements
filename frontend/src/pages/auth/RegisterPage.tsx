@@ -2,14 +2,27 @@ import { useMemo, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 
 import { authApi } from '@/api/auth'
+import { PasswordRequirements } from '@/components/auth/PasswordRequirements'
 import { useToast } from '@/hooks/useToast'
 import { EducationLevel } from '@/types/enums'
-import { getAuthFlowEmail, getAuthFlowRemainingSeconds, hasStoredAuthFlow, saveAuthFlow } from '@/utils/authFlow'
+import { getAuthFlowEmail, getAuthFlowRemainingSeconds, hasStoredAuthFlow, maskEmail, saveAuthFlow } from '@/utils/authFlow'
 import { getErrorMessage } from '@/utils/http'
 import { courseLabel, coursesForEducationLevel, groupsForEducationLevel } from '@/utils/labels'
+import { isPasswordStrong } from '@/utils/password'
 
 function stripEmoji(value: string): string {
   return value.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, '').replace(/\s{2,}/g, ' ')
+}
+
+function getNameError(value: string, label: string) {
+  const normalized = value.trim()
+  if (normalized.length < 2) {
+    return `${label} должно содержать не менее двух букв.`
+  }
+  if (!/^\p{L}+(?:[ '\u2019-]\p{L}+)*$/u.test(normalized)) {
+    return `Укажите настоящее ${label.toLowerCase()} буквами, без никнейма, цифр и специальных символов.`
+  }
+  return ''
 }
 
 const EYE_CLOSED_PATH =
@@ -22,6 +35,7 @@ export function RegisterPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [showPasswordConfirm, setShowPasswordConfirm] = useState(false)
+  const [touchedNames, setTouchedNames] = useState({ first_name: false, last_name: false })
   const [form, setForm] = useState({
     first_name: '',
     last_name: '',
@@ -43,14 +57,9 @@ export function RegisterPage() {
     [form.course, form.education_level],
   )
 
-  const hasLength = form.password.length >= 8
-  const hasUpper = /[A-ZА-Я]/.test(form.password)
-  const hasNumber = /[0-9]/.test(form.password)
-  const hasSpecial = /[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]+/.test(form.password)
-  const strengthScore = [hasLength, hasUpper, hasNumber, hasSpecial].filter(Boolean).length
-  const strengthPercent = strengthScore * 25
-  const strengthColor =
-    strengthScore <= 1 ? 'bg-red-500' : strengthScore <= 3 ? 'bg-yellow-500' : 'bg-green-500'
+  const firstNameError = getNameError(form.first_name, 'Имя')
+  const lastNameError = getNameError(form.last_name, 'Фамилия')
+  const passwordIsStrong = isPasswordStrong(form.password)
 
   const handleChange = <K extends keyof typeof form>(key: K, value: (typeof form)[K]) => {
     const sanitized = (key === 'first_name' || key === 'last_name') ? stripEmoji(value as string) as (typeof form)[K] : value
@@ -78,8 +87,19 @@ export function RegisterPage() {
     event.preventDefault()
     setError(null)
 
-    if (strengthScore < 4) {
+    if (firstNameError || lastNameError) {
+      setTouchedNames({ first_name: true, last_name: true })
+      setError(firstNameError || lastNameError)
+      return
+    }
+
+    if (!passwordIsStrong) {
       setError('Пароль должен соответствовать всем требованиям безопасности.')
+      return
+    }
+
+    if (form.password !== form.password_confirm) {
+      setError('Пароли не совпадают.')
       return
     }
 
@@ -132,7 +152,7 @@ export function RegisterPage() {
           <p className="text-sm font-semibold text-slate-800">Подтверждение регистрации уже начато</p>
           <p className="mt-1 text-sm text-slate-600">
             {pendingVerifyEmail
-              ? `Код отправлен на ${pendingVerifyEmail}. `
+              ? `Код отправлен на ${maskEmail(pendingVerifyEmail)}. `
               : 'Код подтверждения уже отправлен. '}
             {pendingVerifyTimeLeft > 0
               ? `Повторная отправка будет доступна через ${pendingVerifyTimeLeft} сек.`
@@ -166,8 +186,13 @@ export function RegisterPage() {
               required
               value={form.first_name}
               onChange={(event) => handleChange('first_name', event.target.value)}
-              className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:bg-surface focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all"
+              onBlur={() => setTouchedNames((current) => ({ ...current, first_name: true }))}
+              aria-invalid={touchedNames.first_name && Boolean(firstNameError)}
+              className={`w-full px-4 py-2.5 bg-slate-50 border rounded-lg text-sm text-slate-800 focus:bg-surface focus:ring-2 focus:ring-indigo-600/20 outline-none transition-all ${
+                touchedNames.first_name && firstNameError ? 'border-red-400 focus:border-red-500' : 'border-slate-200 focus:border-indigo-600'
+              }`}
             />
+            {touchedNames.first_name && firstNameError ? <p className="mt-1 text-xs text-red-600">{firstNameError}</p> : null}
           </div>
           <div>
             <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
@@ -179,10 +204,20 @@ export function RegisterPage() {
               required
               value={form.last_name}
               onChange={(event) => handleChange('last_name', event.target.value)}
-              className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:bg-surface focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all"
+              onBlur={() => setTouchedNames((current) => ({ ...current, last_name: true }))}
+              aria-invalid={touchedNames.last_name && Boolean(lastNameError)}
+              className={`w-full px-4 py-2.5 bg-slate-50 border rounded-lg text-sm text-slate-800 focus:bg-surface focus:ring-2 focus:ring-indigo-600/20 outline-none transition-all ${
+                touchedNames.last_name && lastNameError ? 'border-red-400 focus:border-red-500' : 'border-slate-200 focus:border-indigo-600'
+              }`}
             />
+            {touchedNames.last_name && lastNameError ? <p className="mt-1 text-xs text-red-600">{lastNameError}</p> : null}
           </div>
         </div>
+
+        <p className="-mt-2 rounded-lg bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-500">
+          Укажите настоящие имя и фамилию — они будут отображаться в документах, рейтинге и публичном профиле.
+          Никнеймы, цифры и специальные символы не принимаются.
+        </p>
 
         <div>
           <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
@@ -316,55 +351,7 @@ export function RegisterPage() {
             </button>
           </div>
 
-          <div className="h-1.5 w-full bg-slate-100 rounded-full mb-3 overflow-hidden">
-            <div
-              className={`h-full transition-all duration-300 ease-out ${strengthColor}`}
-              style={{ width: `${strengthPercent}%` }}
-            />
-          </div>
-
-          <ul className="grid grid-cols-2 gap-x-2 text-[11px] text-slate-500">
-            <li className={`flex items-center ${hasLength ? 'text-green-600 font-medium' : ''}`}>
-              {hasLength ? (
-                <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
-                </svg>
-              ) : (
-                <span className="mr-1.5 opacity-50">•</span>
-              )}
-              8+ символов
-            </li>
-            <li className={`flex items-center ${hasUpper ? 'text-green-600 font-medium' : ''}`}>
-              {hasUpper ? (
-                <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
-                </svg>
-              ) : (
-                <span className="mr-1.5 opacity-50">•</span>
-              )}
-              Заглавная буква
-            </li>
-            <li className={`flex items-center ${hasNumber ? 'text-green-600 font-medium' : ''}`}>
-              {hasNumber ? (
-                <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
-                </svg>
-              ) : (
-                <span className="mr-1.5 opacity-50">•</span>
-              )}
-              Цифра
-            </li>
-            <li className={`flex items-center ${hasSpecial ? 'text-green-600 font-medium' : ''}`}>
-              {hasSpecial ? (
-                <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
-                </svg>
-              ) : (
-                <span className="mr-1.5 opacity-50">•</span>
-              )}
-              Спецсимвол
-            </li>
-          </ul>
+          <PasswordRequirements password={form.password} />
         </div>
 
         <div>
@@ -420,9 +407,9 @@ export function RegisterPage() {
 
         <button
           type="submit"
-          disabled={isSubmitting || strengthScore < 4}
+          disabled={isSubmitting || !passwordIsStrong}
           className={`mt-4 w-full rounded-lg py-2.5 text-sm font-medium shadow-sm transition-colors ${
-            isSubmitting || strengthScore < 4
+            isSubmitting || !passwordIsStrong
               ? 'cursor-not-allowed bg-slate-300 text-slate-500'
               : 'bg-indigo-600 text-white hover:bg-indigo-700'
           }`}

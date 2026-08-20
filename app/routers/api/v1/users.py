@@ -14,6 +14,7 @@ from sqlalchemy.orm import selectinload
 from app.infrastructure.database import get_db
 from app.middlewares.api_auth_middleware import auth
 from app.models.achievement import Achievement
+from app.models.audit_log import AuditLog
 from app.models.enums import AchievementStatus, EducationLevel, UserRole, UserStatus
 from app.models.season_result import SeasonResult
 from app.models.user import Users
@@ -22,6 +23,7 @@ from app.repositories.admin.support_repository import SupportMessageRepository, 
 from app.services.admin.resume_service import ResumeService
 from app.services.admin.smart_search_service import SmartSearchService
 from app.services.admin.support_service import SupportService
+from app.services.audit_service import log_action
 from app.utils.access import is_in_zone, is_staff_role
 from app.utils.cache import invalidate_scoreboard_caches
 from app.utils.education import AVAILABLE_EDUCATION_LEVELS, COURSE_MAPPING, GROUP_MAPPING
@@ -379,6 +381,7 @@ async def list_users(
     return {
         'users': [serialize_user(item) for item in users],
         'page': page,
+        'total_items': total_items,
         'total_pages': max(1, math.ceil(total_items / limit)),
         'roles': [item.value for item in UserRole],
         'statuses': [item.value for item in VISIBLE_USER_STATUSES],
@@ -454,28 +457,64 @@ async def smart_search_users(
     service = SmartSearchService(db)
     matched_ids = await service.search(stmt, description)
 
-    if matched_ids is None:
-        raise HTTPException(
-            status_code=503,
-            detail='AI-поиск временно недоступен — сервис локальной LLM не отвечает.',
-        )
-
     users_by_id = {}
     if matched_ids:
-        found = (await db.execute(select(Users).filter(Users.id.in_(matched_ids)))).scalars().all()
+        found = (
+            await db.execute(
+                select(Users)
+                .options(selectinload(Users.achievements))
+                .filter(Users.id.in_(matched_ids))
+            )
+        ).scalars().all()
         users_by_id = {user.id: user for user in found}
 
     ordered_users = [users_by_id[uid] for uid in matched_ids if uid in users_by_id]
 
+    description_words = {
+        word.casefold()
+        for word in description.replace(',', ' ').replace('.', ' ').split()
+        if len(word) >= 4
+    }
+    serialized_users = []
+    for item in ordered_users:
+        serialized = serialize_user(item)
+        matching_titles = []
+        for achievement in item.achievements:
+            haystack = ' '.join(
+                filter(
+                    None,
+                    [
+                        achievement.title,
+                        achievement.description,
+                        getattr(achievement.category, 'value', achievement.category),
+                        getattr(achievement.result, 'value', achievement.result),
+                    ],
+                )
+            ).casefold()
+            if description_words and any(word in haystack for word in description_words):
+                matching_titles.append(achievement.title)
+        serialized['match_reason'] = (
+            f"Совпали достижения: {', '.join(matching_titles[:3])}"
+            if matching_titles
+            else (
+                'Совпали данные профиля и подтверждённых достижений.'
+                if service.used_fallback
+                else 'Профиль и достижения соответствуют описанию по результату ИИ-поиска.'
+            )
+        )
+        serialized_users.append(serialized)
+
     return {
-        'users': [serialize_user(item) for item in ordered_users],
+        'users': serialized_users,
         'page': 1,
+        'total_items': len(serialized_users),
         'total_pages': 1,
         'roles': [item.value for item in UserRole],
         'statuses': [item.value for item in VISIBLE_USER_STATUSES],
         'education_levels': AVAILABLE_EDUCATION_LEVELS,
         'course_mapping': COURSE_MAPPING,
         'group_mapping': GROUP_MAPPING,
+        'search_mode': 'fallback' if service.used_fallback else 'ai',
     }
 
 
@@ -496,6 +535,15 @@ async def get_user_detail(
     total_points = snapshot['total_points']
     gpa_bonus = snapshot['gpa_bonus']
     chart_rows = snapshot['chart_rows']
+    audit_rows = (
+        await db.execute(
+            select(AuditLog)
+            .options(selectinload(AuditLog.user))
+            .filter(AuditLog.target_type == 'user', AuditLog.target_id == user_id)
+            .order_by(AuditLog.created_at.desc())
+            .limit(100)
+        )
+    ).scalars().all()
 
     return {
         'user': serialize_user(target_user),
@@ -512,6 +560,20 @@ async def get_user_detail(
         'education_levels': AVAILABLE_EDUCATION_LEVELS,
         'course_mapping': COURSE_MAPPING,
         'group_mapping': GROUP_MAPPING,
+        'audit_log': [
+            {
+                'id': row.id,
+                'action': row.action,
+                'details': row.details,
+                'created_at': row.created_at.isoformat() if row.created_at else None,
+                'actor': (
+                    f'{row.user.first_name} {row.user.last_name}'
+                    if row.user
+                    else 'Система'
+                ),
+            }
+            for row in audit_rows
+        ],
     }
 
 
@@ -528,6 +590,7 @@ async def update_user_role(
 
     _assert_role_change_allowed(current_user, target_user, payload.role)
 
+    previous_role = target_user.role
     update_data: dict[str, object | None] = {'role': payload.role}
     if payload.role == UserRole.MODERATOR:
         update_data['education_level'] = _resolve_education_level(payload.education_level)
@@ -563,6 +626,15 @@ async def update_user_role(
 
     repository = UserRepository(db)
     updated_user = await repository.update(user_id, update_data)
+    await log_action(
+        db,
+        current_user.id,
+        'user.role_change',
+        'user',
+        user_id,
+        f'{previous_role} → {payload.role}',
+    )
+    await db.commit()
     return {'success': True, 'user': serialize_user(updated_user)}
 
 
@@ -591,6 +663,7 @@ async def delete_user(
     target_user.session_version = int(target_user.session_version or 0) + 1
     target_user.api_access_version = int(target_user.api_access_version or 0) + 1
     target_user.api_refresh_version = int(target_user.api_refresh_version or 0) + 1
+    await log_action(db, current_user.id, 'user.archive', 'user', user_id)
     await db.commit()
     await invalidate_scoreboard_caches()
     await db.refresh(target_user)
@@ -619,6 +692,7 @@ async def restore_user(
     target_user.status = UserStatus.PENDING if target_user.role == UserRole.GUEST else UserStatus.ACTIVE
     target_user.is_active = True
     target_user.reviewed_by_id = None
+    await log_action(db, current_user.id, 'user.restore', 'user', user_id)
     target_user.session_version = int(target_user.session_version or 0) + 1
     target_user.api_access_version = int(target_user.api_access_version or 0) + 1
     target_user.api_refresh_version = int(target_user.api_refresh_version or 0) + 1
@@ -702,6 +776,14 @@ async def set_gpa(
         raise HTTPException(status_code=400, detail='GPA must be between 2.0 and 5.0.')
 
     target_user.session_gpa = f'{gpa_value:.1f}'
+    await log_action(
+        db,
+        current_user.id,
+        'user.gpa_change',
+        'user',
+        user_id,
+        f'GPA: {target_user.session_gpa}; бонус: {calculate_gpa_bonus(target_user.session_gpa)}',
+    )
     await db.commit()
     await invalidate_scoreboard_caches()
     await db.refresh(target_user)

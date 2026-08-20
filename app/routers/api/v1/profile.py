@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import re
+import json
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile, status
@@ -15,6 +16,7 @@ from app.infrastructure.jwt_handler import ALGORITHM, SECRET_KEY, JWTError
 from app.middlewares.api_auth_middleware import auth
 from app.models.achievement import Achievement
 from app.models.enums import AchievementStatus, UserStatus
+from app.models.resume_version import ResumeVersion
 from app.repositories.admin.user_repository import UserRepository
 from app.repositories.admin.user_token_repository import UserTokenRepository
 from app.schemas.admin.auth import ResetPasswordSchema
@@ -44,6 +46,17 @@ _EMOJI_RE = re.compile(
     '\U000024C2-\U0001F251]+',
     flags=re.UNICODE,
 )
+
+PUBLIC_VISIBILITY_DEFAULTS = {
+    'avatar': True,
+    'education': True,
+    'group': True,
+    'gpa': True,
+    'analytics': True,
+    'achievements': True,
+    'resume': True,
+    'score': True,
+}
 
 
 class FlowTokenPayload(BaseModel):
@@ -154,6 +167,23 @@ async def profile(current_user=Depends(auth), db: AsyncSession = Depends(get_db)
         .order_by(Achievement.created_at.desc())
     )).scalars().all()
 
+    resume_versions = (await db.execute(
+        select(ResumeVersion)
+        .filter(ResumeVersion.user_id == user.id)
+        .order_by(ResumeVersion.created_at.desc(), ResumeVersion.id.desc())
+        .limit(10)
+    )).scalars().all()
+
+    completed_fields = [
+        bool(user.first_name),
+        bool(user.last_name),
+        bool(user.phone_number),
+        bool(user.avatar_path),
+        bool(user.education_level),
+        bool(user.course),
+        bool(user.study_group),
+    ]
+
     return {
         'user': serialize_user(user),
         'can_generate': check['allowed'],
@@ -165,6 +195,17 @@ async def profile(current_user=Depends(auth), db: AsyncSession = Depends(get_db)
         'has_chart_data': bool(sorted_months),
         'my_docs': [serialize_achievement(item) for item in docs],
         'gpa_bonus': calculate_gpa_bonus(user.session_gpa),
+        'profile_completion': round(sum(completed_fields) / len(completed_fields) * 100),
+        'public_visibility': {**PUBLIC_VISIBILITY_DEFAULTS, **(user.public_visibility or {})},
+        'resume_versions': [
+            {
+                'id': item.id,
+                'text': item.text,
+                'source_documents_count': item.source_documents_count,
+                'created_at': item.created_at.isoformat() if item.created_at else None,
+            }
+            for item in resume_versions
+        ],
     }
 
 
@@ -175,6 +216,7 @@ async def update_profile(
     first_name: str | None = Form(default=None),
     last_name: str | None = Form(default=None),
     phone_number: str | None = Form(default=None),
+    public_visibility: str | None = Form(default=None),
     avatar: UploadFile | None = File(default=None),
     current_user=Depends(auth),
     service: UserService = Depends(get_user_service),
@@ -192,11 +234,23 @@ async def update_profile(
     if normalized_phone and not _PHONE_RE.match(normalized_phone):
         raise HTTPException(status_code=400, detail='Неверный формат телефона.')
 
-    update_data: dict[str, str | None] = {
+    update_data: dict[str, object | None] = {
         'first_name': normalized_first_name,
         'last_name': normalized_last_name,
         'phone_number': normalized_phone,
     }
+
+    if public_visibility is not None:
+        try:
+            requested_visibility = json.loads(public_visibility)
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise HTTPException(status_code=400, detail='Неверные настройки публичного профиля.') from exc
+        if not isinstance(requested_visibility, dict):
+            raise HTTPException(status_code=400, detail='Неверные настройки публичного профиля.')
+        update_data['public_visibility'] = {
+            key: bool(requested_visibility.get(key, default))
+            for key, default in PUBLIC_VISIBILITY_DEFAULTS.items()
+        }
 
     if avatar and avatar.filename:
         try:

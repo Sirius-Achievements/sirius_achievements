@@ -59,9 +59,13 @@ class UserRegister(BaseModel):
     @field_validator("first_name", "last_name")
     @classmethod
     def strip_emoji_from_name(cls, v):
-        cleaned = _EMOJI_RE.sub('', v).strip()
+        cleaned = re.sub(r"\s+", " ", _EMOJI_RE.sub('', v)).strip()
         if len(cleaned) < 2:
-            raise ValueError("Имя и фамилия не должны содержать эмодзи и должны быть не короче 2 символов.")
+            raise ValueError("Имя и фамилия должны быть не короче 2 символов.")
+        if not re.fullmatch(r"[^\W\d_]+(?:[ '\-’][^\W\d_]+)*", cleaned, flags=re.UNICODE):
+            raise ValueError(
+                "Укажите настоящее имя и фамилию буквами, без никнеймов, цифр и специальных символов."
+            )
         return cleaned
 
     @field_validator("password")

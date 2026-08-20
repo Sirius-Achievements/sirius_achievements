@@ -98,6 +98,9 @@ export function MyWorkPage() {
   const [decisionTarget, setDecisionTarget] = useState<Achievement | null>(null)
   const [decisionReason, setDecisionReason] = useState('')
   const [isSubmittingDecision, setIsSubmittingDecision] = useState(false)
+  const [rejectUserTarget, setRejectUserTarget] = useState<User | null>(null)
+  const [rejectUserReason, setRejectUserReason] = useState('')
+  const [isRejectingUser, setIsRejectingUser] = useState(false)
   const [editTarget, setEditTarget] = useState<Achievement | null>(null)
   const [editTitle, setEditTitle] = useState('')
   const [editDescription, setEditDescription] = useState('')
@@ -298,24 +301,27 @@ export function MyWorkPage() {
   }
 
   const handleRejectUser = async (user: User) => {
-    const confirmed = window.confirm(
-      `Отклонить пользователя ${user.first_name} ${user.last_name}? Это действие необратимо.`,
-    )
+    setRejectUserTarget(user)
+    setRejectUserReason('')
+  }
 
-    if (!confirmed) {
-      return
-    }
-
+  const submitRejectUser = async () => {
+    if (!rejectUserTarget || rejectUserReason.trim().length < 5) return
+    setIsRejectingUser(true)
     try {
-      await moderationApi.rejectUser(user.id)
+      await moderationApi.rejectUser(rejectUserTarget.id, rejectUserReason.trim())
       pushToast({
         title: 'Пользователь отклонён',
-        message: `${user.first_name} ${user.last_name}`,
+        message: `${rejectUserTarget.first_name} ${rejectUserTarget.last_name}`,
         tone: 'success',
       })
+      setRejectUserTarget(null)
+      setRejectUserReason('')
       await load()
     } catch (rejectError) {
       setError(getErrorMessage(rejectError, 'Не удалось отклонить пользователя.'))
+    } finally {
+      setIsRejectingUser(false)
     }
   }
 
@@ -1132,6 +1138,21 @@ export function MyWorkPage() {
                 </svg>
                 Полный отказ
               </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {rejectUserTarget ? (
+        <div className="fixed inset-0 z-[95] flex items-center justify-center bg-slate-900/70 p-4 backdrop-blur-sm" onClick={() => !isRejectingUser && setRejectUserTarget(null)}>
+          <div className="w-full max-w-md rounded-xl bg-surface p-5 shadow-xl" onClick={(event) => event.stopPropagation()}>
+            <h3 className="text-base font-bold text-slate-800">Отклонить регистрацию</h3>
+            <p className="mt-1 text-sm text-slate-500">{rejectUserTarget.first_name} {rejectUserTarget.last_name} увидит указанную причину.</p>
+            <label className="mt-4 block text-xs font-semibold text-slate-600">Причина <span className="text-red-500">*</span></label>
+            <textarea value={rejectUserReason} onChange={(event) => setRejectUserReason(event.target.value)} rows={4} autoFocus className="mt-2 w-full resize-none rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-500" placeholder="Например: указан ник вместо настоящего имени и фамилии." />
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" onClick={() => setRejectUserTarget(null)} disabled={isRejectingUser} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600">Отмена</button>
+              <button type="button" onClick={() => void submitRejectUser()} disabled={isRejectingUser || rejectUserReason.trim().length < 5} className="rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">{isRejectingUser ? 'Отклоняем…' : 'Отклонить'}</button>
             </div>
           </div>
         </div>

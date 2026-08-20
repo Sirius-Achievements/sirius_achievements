@@ -5,6 +5,8 @@ export interface SupportTicket {
   user_id: number
   moderator_id?: number
   subject: string
+  category?: string
+  resolution?: string
   status: SupportTicketStatus
   created_at: string
   updated_at: string
@@ -13,6 +15,8 @@ export interface SupportTicket {
   closed_at?: string
   archived_at?: string
   messages_count?: number
+  student_unread_count?: number
+  moderator_unread_count?: number
   user?: {
     id: number
     first_name: string
@@ -35,6 +39,7 @@ export interface SupportMessage {
   id: number
   ticket_id: number
   sender_id: number
+  reply_to_id?: number | null
   text?: string
   file_path?: string
   is_from_moderator: boolean
@@ -61,4 +66,11 @@ export interface SupportListResponse {
   total_pages?: number
   total?: number
   view?: string
+  unread_count?: number
+  stats?: {
+    active: number
+    free: number
+    mine: number
+    overdue: number
+  }
 }

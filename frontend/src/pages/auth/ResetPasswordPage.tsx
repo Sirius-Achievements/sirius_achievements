@@ -2,15 +2,18 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 
 import { authApi } from '@/api/auth'
+import { PasswordRequirements } from '@/components/auth/PasswordRequirements'
 import { useToast } from '@/hooks/useToast'
 import {
   clearAuthFlow,
   getAuthFlowEmail,
   getAuthFlowToken,
   hasStoredAuthFlow,
+  maskEmail,
   saveAuthFlow,
 } from '@/utils/authFlow'
 import { getErrorMessage } from '@/utils/http'
+import { isPasswordStrong } from '@/utils/password'
 
 const EYE_OPEN_PATH = 'M15 12a3 3 0 11-6 0 3 3 0 016 0z'
 const EYE_FRAME_PATH =
@@ -37,6 +40,8 @@ export function ResetPasswordPage() {
   const [showConfirm, setShowConfirm] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const passwordIsStrong = isPasswordStrong(password)
+  const passwordsMatch = password === passwordConfirm
 
   useEffect(() => {
     if (!flowToken) {
@@ -51,6 +56,14 @@ export function ResetPasswordPage() {
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setError(null)
+    if (!passwordIsStrong) {
+      setError('Пароль должен соответствовать всем требованиям безопасности.')
+      return
+    }
+    if (!passwordsMatch) {
+      setError('Пароли не совпадают.')
+      return
+    }
     setIsSubmitting(true)
 
     try {
@@ -59,7 +72,7 @@ export function ResetPasswordPage() {
       clearAuthFlow('reset_password')
       pushToast({
         title: 'Пароль обновлён',
-        message: 'Теперь можно войти с новым паролем.',
+        message: 'Все старые сессии завершены. Теперь можно войти с новым паролем.',
         tone: 'success',
       })
       navigate('/login')
@@ -74,7 +87,7 @@ export function ResetPasswordPage() {
     <div className="theme-auth-card w-full max-w-sm bg-surface rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8">
       <div className="text-center mb-6">
         <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Новый пароль</h1>
-        <p className="mt-1 text-sm text-slate-500">Придумайте надёжный пароль</p>
+        <p className="mt-1 text-sm text-slate-500">Придумайте надёжный пароль. После сохранения все старые сессии будут завершены.</p>
       </div>
 
       {!flowToken && hasPendingCodeVerification ? (
@@ -82,7 +95,7 @@ export function ResetPasswordPage() {
           <p className="text-sm font-semibold text-slate-800">Сначала подтвердите код из письма</p>
           <p className="mt-1 text-sm text-slate-600">
             {flowEmail
-              ? `Для ${flowEmail} уже есть активный шаг подтверждения кода.`
+              ? `Для ${maskEmail(flowEmail)} уже есть активный шаг подтверждения кода.`
               : 'Шаг подтверждения кода уже начат.'}
           </p>
           <button
@@ -135,6 +148,7 @@ export function ResetPasswordPage() {
               </svg>
             </button>
           </div>
+          <PasswordRequirements password={password} />
         </div>
 
         <div>
@@ -164,11 +178,18 @@ export function ResetPasswordPage() {
               </svg>
             </button>
           </div>
+          {passwordConfirm && !passwordsMatch ? (
+            <p className="mt-1 text-xs text-red-600">Пароли не совпадают.</p>
+          ) : null}
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs leading-relaxed text-slate-600">
+          В целях безопасности после смены пароля будут завершены все сеансы на других устройствах.
         </div>
 
         <button
           type="submit"
-          disabled={isSubmitting || !flowToken}
+          disabled={isSubmitting || !flowToken || !passwordIsStrong || !passwordsMatch}
           className="mt-2 w-full rounded-lg bg-indigo-600 py-2.5 text-sm font-medium text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-70"
         >
           {isSubmitting ? 'Сохраняем...' : 'Сохранить пароль'}

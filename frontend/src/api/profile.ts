@@ -12,6 +12,9 @@ export interface ProfileResponse {
   has_chart_data: boolean
   my_docs: Array<{ id: number; title: string; status: string; created_at: string; category: string; level: string; points: number; file_path?: string; result?: string }>
   gpa_bonus: number
+  profile_completion: number
+  public_visibility: Record<string, boolean>
+  resume_versions: Array<{ id: number; text: string; source_documents_count: number; created_at?: string | null }>
 }
 
 export const profileApi = {

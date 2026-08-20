@@ -47,6 +47,10 @@ class BatchAchievementPayload(BaseModel):
     action: str
 
 
+class UserRejectPayload(BaseModel):
+    reason: str
+
+
 async def require_moderator(current_user=Depends(auth)):
     if current_user.role not in {UserRole.MODERATOR, UserRole.SUPER_ADMIN}:
         raise HTTPException(status_code=403, detail='Access denied')
@@ -114,6 +118,7 @@ async def approve_user(
 
     target_user.status = UserStatus.ACTIVE
     target_user.role = UserRole.STUDENT
+    target_user.registration_rejection_reason = None
     target_user.reviewed_by_id = None
     await log_action(db, current_user.id, 'user.approve', 'user', user_id)
     await db.commit()
@@ -125,6 +130,7 @@ async def approve_user(
 @router.post('/users/{user_id}/reject')
 async def reject_user(
     user_id: int,
+    payload: UserRejectPayload,
     current_user=Depends(require_moderator),
     db: AsyncSession = Depends(get_db),
 ):
@@ -132,9 +138,13 @@ async def reject_user(
     if not target_user or not _is_user_in_moderator_scope(current_user, target_user):
         raise HTTPException(status_code=404, detail='User not found in your moderation zone')
 
+    reason = payload.reason.strip()
+    if len(reason) < 5:
+        raise HTTPException(status_code=400, detail='Укажите понятную причину отклонения.')
     target_user.status = UserStatus.REJECTED
+    target_user.registration_rejection_reason = reason
     target_user.reviewed_by_id = None
-    await log_action(db, current_user.id, 'user.reject', 'user', user_id)
+    await log_action(db, current_user.id, 'user.reject', 'user', user_id, reason)
     await db.commit()
     await invalidate_scoreboard_caches()
     await db.refresh(target_user)

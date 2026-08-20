@@ -7,10 +7,7 @@ import { PdfViewer } from '@/components/ui/PdfViewer'
 import { SupportChatResponse } from '@/types/support'
 import { useToast } from '@/hooks/useToast'
 import { getErrorMessage } from '@/utils/http'
-
-function isPdf(path?: string | null) {
-  return /\.pdf$/i.test(path ?? '')
-}
+import { SUPPORT_FILE_ACCEPT, supportAttachmentKind, validateSupportFile } from '@/utils/supportFiles'
 
 function openImageOverlay(src: string) {
   const overlay = document.createElement('div')
@@ -56,6 +53,10 @@ export function ModerationSupportChatPage() {
   const [text, setText] = useState('')
   const [file, setFile] = useState<File | null>(null)
   const [sessionDuration, setSessionDuration] = useState('month')
+  const [closeResolution, setCloseResolution] = useState('resolved')
+  const [replyingTo, setReplyingTo] = useState<number | null>(null)
+  const [sendStatus, setSendStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
+  const [isDraggingFile, setIsDraggingFile] = useState(false)
   const [reopenDuration, setReopenDuration] = useState('month')
   const [isLoading, setIsLoading] = useState(true)
   const [isSending, setIsSending] = useState(false)
@@ -156,7 +157,7 @@ export function ModerationSupportChatPage() {
     setIsClosing(true)
     setError(null)
     try {
-      const { data } = await supportApi.closeTicket(ticketId)
+      const { data } = await supportApi.closeTicket(ticketId, closeResolution)
       setChat((c) => c ? { ...c, ticket: data.ticket } : c)
       pushToast({ title: 'Обращение закрыто', tone: 'success' })
     } catch (e) {
@@ -183,21 +184,35 @@ export function ModerationSupportChatPage() {
   const handleSend = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!text.trim() && !file) return
+    if (file) {
+      const validationError = validateSupportFile(file)
+      if (validationError) {
+        setError(validationError)
+        setSendStatus('error')
+        return
+      }
+    }
     setIsSending(true)
+    setSendStatus('sending')
     setError(null)
     try {
       const formData = new FormData()
       if (text.trim()) formData.append('text', text)
       if (file) formData.append('file', file)
       formData.append('session_duration', sessionDuration)
+      if (replyingTo) formData.append('reply_to_id', String(replyingTo))
 
       const { data } = await supportApi.sendModMessage(ticketId, formData)
       setChat((c) => c ? { ...c, ticket: data.ticket, messages: [...c.messages, data.message], can_manage_ticket: true, can_take_ticket: false, is_my_ticket: true } : c)
       setText('')
       setFile(null)
+      setReplyingTo(null)
+      setSendStatus('sent')
+      window.setTimeout(() => setSendStatus('idle'), 1800)
       if (fileInputRef.current) fileInputRef.current.value = ''
     } catch (e) {
       setError(getErrorMessage(e, 'Не удалось отправить сообщение.'))
+      setSendStatus('error')
     } finally {
       setIsSending(false)
     }
@@ -214,6 +229,21 @@ export function ModerationSupportChatPage() {
   const handleRemoveFile = () => {
     setFile(null)
     if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  const acceptSupportFile = (nextFile?: File) => {
+    if (!nextFile) return
+    const validationError = validateSupportFile(nextFile)
+    if (validationError) {
+      setError(validationError)
+      setFile(null)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+      setIsDraggingFile(false)
+      return
+    }
+    setError(null)
+    setFile(nextFile)
+    setIsDraggingFile(false)
   }
 
 
@@ -234,6 +264,7 @@ export function ModerationSupportChatPage() {
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Обращение</p>
           <h3 className="text-sm font-bold text-slate-800">{chat.ticket.subject}</h3>
           <p className="text-[10px] text-slate-400 mt-1">#{chat.ticket.id} · {formatFullDate(chat.ticket.created_at)}</p>
+          {chat.ticket.category ? <p className="mt-2 inline-flex rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-600">{({ technical: 'Техническая проблема', documents: 'Документы', rating: 'Рейтинг', account: 'Аккаунт' } as Record<string, string>)[chat.ticket.category] ?? chat.ticket.category}</p> : null}
         </div>
 
         <div className="border-t border-slate-100 pt-3">
@@ -300,9 +331,17 @@ export function ModerationSupportChatPage() {
               Это обращение уже закреплено за другим модератором. Вам доступен только просмотр.
             </div>
           ) : !isClosed ? (
-            <button type="button" onClick={() => void handleClose()} disabled={isClosing} className="w-full text-xs text-red-600 font-bold bg-red-50 px-3 py-2 rounded-lg hover:bg-red-100 transition-colors border border-red-200">
-              {isClosing ? 'Закрываем...' : 'Закрыть обращение'}
-            </button>
+            <div className="space-y-2">
+              <select value={closeResolution} onChange={(event) => setCloseResolution(event.target.value)} className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                <option value="resolved">Решено</option>
+                <option value="product_bug">Ошибка продукта</option>
+                <option value="document_question">Вопрос по документу</option>
+                <option value="duplicate">Дубль</option>
+              </select>
+              <button type="button" onClick={() => void handleClose()} disabled={isClosing} className="w-full text-xs text-red-600 font-bold bg-red-50 px-3 py-2 rounded-lg hover:bg-red-100 transition-colors border border-red-200">
+                {isClosing ? 'Закрываем...' : 'Закрыть с результатом'}
+              </button>
+            </div>
           ) : (
             <div className="space-y-2">
               <div>
@@ -354,13 +393,18 @@ export function ModerationSupportChatPage() {
                   </div>
                 ) : null}
 
+                {msg.reply_to_id ? (() => {
+                  const quoted = chat.messages.find((item) => item.id === msg.reply_to_id)
+                  return quoted ? <div className="mb-2 rounded-lg border-l-2 border-current bg-black/10 px-2 py-1 text-[11px] opacity-80 line-clamp-2">{quoted.text || 'Вложение'}</div> : null
+                })() : null}
+
                 {msg.text ? <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{msg.text}</p> : null}
 
                 {msg.file_path ? (
                   <div className="mt-2">
                     {attachmentUrls[msg.id] ? (
                       <div className="space-y-1.5">
-                        {isPdf(msg.file_path) ? (
+                        {supportAttachmentKind(msg.file_path) === 'pdf' ? (
                           <button
                             type="button"
                             onClick={() => setPdfOverlay(attachmentUrls[msg.id])}
@@ -369,13 +413,18 @@ export function ModerationSupportChatPage() {
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
                             Открыть PDF
                           </button>
-                        ) : (
+                        ) : supportAttachmentKind(msg.file_path) === 'image' ? (
                           <img
                             src={attachmentUrls[msg.id]}
                             alt="Вложение"
                             className="max-w-full rounded-lg max-h-64 object-contain cursor-pointer"
                             onClick={() => openImageOverlay(attachmentUrls[msg.id])}
                           />
+                        ) : (
+                          <div className="inline-flex items-center gap-2 rounded-lg bg-surface/20 px-3 py-2 text-xs font-medium">
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 21h10a2 2 0 002-2V9.4a1 1 0 00-.3-.7l-5.4-5.4A1 1 0 0012.6 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
+                            Документ Word
+                          </div>
                         )}
                         <a
                           href={attachmentUrls[msg.id]}
@@ -395,6 +444,7 @@ export function ModerationSupportChatPage() {
                 <div className={`text-[10px] ${msg.is_from_moderator ? 'text-indigo-200' : 'text-slate-400'} mt-1 text-right`}>
                   {msg.created_at ? formatMsgDate(msg.created_at) : ''}
                 </div>
+                {!isClosed && chat.can_manage_ticket ? <button type="button" onClick={() => { setReplyingTo(msg.id); textareaRef.current?.focus() }} className={`mt-1 text-[10px] underline underline-offset-2 ${msg.is_from_moderator ? 'text-indigo-100' : 'text-slate-400'}`}>Ответить</button> : null}
               </div>
             </div>
           ))}
@@ -405,14 +455,22 @@ export function ModerationSupportChatPage() {
             <p className="text-sm text-slate-500">Закрытое обращение</p>
           </div>
         ) : !isClosed && chat.can_manage_ticket ? (
-          <div className="bg-surface rounded-b-xl border border-slate-200 border-t-0 p-3 shrink-0">
-            <form onSubmit={handleSend} className="flex items-end gap-2">
+          <div className="sticky bottom-0 bg-surface rounded-b-xl border border-slate-200 border-t-0 p-3 shrink-0" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
+            <form
+              onSubmit={handleSend}
+              onDragOver={(event) => { event.preventDefault(); setIsDraggingFile(true) }}
+              onDragLeave={() => setIsDraggingFile(false)}
+              onDrop={(event) => { event.preventDefault(); acceptSupportFile(event.dataTransfer.files?.[0]) }}
+              className={`relative flex items-end gap-2 rounded-xl ${isDraggingFile ? 'ring-2 ring-indigo-500 bg-indigo-50' : ''}`}
+            >
+              {isDraggingFile ? <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-indigo-50/95 text-xs font-bold text-indigo-700">Отпустите файл для прикрепления</div> : null}
               <label className="flex h-[38px] w-[38px] shrink-0 cursor-pointer items-center justify-center text-slate-400 transition-colors hover:text-indigo-600">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
-                <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp,application/pdf" className="hidden" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+                <input ref={fileInputRef} type="file" accept={SUPPORT_FILE_ACCEPT} className="hidden" onChange={(e) => acceptSupportFile(e.target.files?.[0])} />
               </label>
 
               <div className="flex-1 min-w-0">
+                {replyingTo ? <div className="mb-1 flex items-center justify-between rounded-lg bg-slate-100 px-2 py-1 text-[10px] text-slate-500"><span className="truncate">Ответ на: {chat.messages.find((item) => item.id === replyingTo)?.text || 'вложение'}</span><button type="button" onClick={() => setReplyingTo(null)} className="ml-2">×</button></div> : null}
                 <textarea
                   ref={textareaRef}
                   value={text}
@@ -442,9 +500,10 @@ export function ModerationSupportChatPage() {
                 </select>
               </div>
 
-              <button type="submit" disabled={isSending} className="inline-flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-white transition-colors hover:bg-indigo-700 disabled:opacity-60">
+              <button type="submit" disabled={isSending} className={`inline-flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-lg text-white transition-colors disabled:opacity-60 ${sendStatus === 'error' ? 'bg-red-600' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>
               </button>
+              {sendStatus !== 'idle' ? <span className={`absolute -bottom-4 right-0 text-[9px] ${sendStatus === 'error' ? 'text-red-600' : 'text-slate-400'}`}>{sendStatus === 'sending' ? 'Отправляется…' : sendStatus === 'sent' ? 'Отправлено' : 'Ошибка — нажмите ещё раз'}</span> : null}
             </form>
           </div>
         ) : !isClosed ? (

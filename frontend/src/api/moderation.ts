@@ -39,8 +39,8 @@ export const moderationApi = {
     return client.post<{ success: boolean; user: User }>(`/moderation/users/${id}/approve`)
   },
 
-  rejectUser(id: number) {
-    return client.post<{ success: boolean; user: User }>(`/moderation/users/${id}/reject`)
+  rejectUser(id: number, reason: string) {
+    return client.post<{ success: boolean; user: User }>(`/moderation/users/${id}/reject`, { reason })
   },
 
   getAchievements(params?: ModerationAchievementsParams) {

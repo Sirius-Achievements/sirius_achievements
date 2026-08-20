@@ -8,6 +8,8 @@ export interface User {
   email: string
   phone_number?: string
   avatar_path?: string
+  public_visibility?: Record<string, boolean>
+  registration_rejection_reason?: string
   role: UserRole
   status: UserStatus
   education_level?: EducationLevel
@@ -22,17 +24,20 @@ export interface User {
   updated_at: string
   resume_text?: string
   resume_generated_at?: string
+  match_reason?: string
 }
 
 export interface UserListResponse {
   users: User[]
   page: number
+  total_items: number
   total_pages: number
   roles: string[]
   statuses: string[]
   education_levels: string[]
   course_mapping?: Record<string, number>
   group_mapping?: Record<string, Record<number, string[]>>
+  search_mode?: 'ai' | 'fallback'
 }
 
 export interface UserDetailResponse {
@@ -50,6 +55,13 @@ export interface UserDetailResponse {
   education_levels: string[]
   course_mapping?: Record<string, number>
   group_mapping?: Record<string, Record<number, string[]>>
+  audit_log: Array<{
+    id: number
+    action: string
+    details?: string
+    created_at?: string
+    actor: string
+  }>
 }
 
 export interface UserNote {

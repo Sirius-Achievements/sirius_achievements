@@ -1,9 +1,10 @@
 import pytest
 import os
 import tempfile
+import zipfile
 from unittest.mock import AsyncMock, MagicMock, patch
 from io import BytesIO
-from app.utils.file_validator import FileValidator, DOC_SIGNATURES, IMAGE_SIGNATURES
+from app.utils.file_validator import FileValidator, DOC_SIGNATURES, IMAGE_SIGNATURES, SUPPORT_SIGNATURES
 
 
 @pytest.fixture
@@ -12,7 +13,7 @@ def tmp_dir():
         yield d
 
 
-def make_upload_file(header: bytes, size: int = None):
+def make_upload_file(header: bytes, size: int = None, filename: str | None = None):
     """Create a mock UploadFile."""
     mock = AsyncMock()
     effective_size = size or len(header)
@@ -33,7 +34,7 @@ def make_upload_file(header: bytes, size: int = None):
     mock.seek = mock_seek
     mock.file = BytesIO(content)
     mock.size = effective_size
-    mock.filename = None
+    mock.filename = filename
 
     return mock
 
@@ -84,3 +85,36 @@ async def test_webp_image_signature(tmp_dir):
     file = make_upload_file(b'RIFF' + b'\x00' * 100)
     path = await validator.validate_and_save(file)
     assert path.endswith('.webp')
+
+
+@pytest.mark.asyncio
+async def test_support_accepts_valid_docx(tmp_dir):
+    payload = BytesIO()
+    with zipfile.ZipFile(payload, 'w') as archive:
+        archive.writestr('[Content_Types].xml', '<Types/>')
+        archive.writestr('word/document.xml', '<document/>')
+
+    validator = FileValidator(SUPPORT_SIGNATURES, max_size=5 * 1024 * 1024, upload_dir=tmp_dir)
+    file = make_upload_file(payload.getvalue(), filename='report.docx')
+    path = await validator.validate_and_save(file)
+    assert path.endswith('.docx')
+
+
+@pytest.mark.asyncio
+async def test_support_rejects_zip_renamed_to_docx(tmp_dir):
+    payload = BytesIO()
+    with zipfile.ZipFile(payload, 'w') as archive:
+        archive.writestr('payload.txt', 'not a Word document')
+
+    validator = FileValidator(SUPPORT_SIGNATURES, max_size=5 * 1024 * 1024, upload_dir=tmp_dir)
+    file = make_upload_file(payload.getvalue(), filename='payload.docx')
+    with pytest.raises(ValueError, match='Недопустимый формат'):
+        await validator.validate_and_save(file)
+
+
+@pytest.mark.asyncio
+async def test_support_accepts_legacy_doc_signature(tmp_dir):
+    validator = FileValidator(SUPPORT_SIGNATURES, max_size=5 * 1024 * 1024, upload_dir=tmp_dir)
+    file = make_upload_file(b'\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1' + b'\x00' * 64, filename='report.doc')
+    path = await validator.validate_and_save(file)
+    assert path.endswith('.doc')

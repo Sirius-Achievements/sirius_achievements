@@ -7,6 +7,8 @@ import {
   getAuthFlowEmail,
   getAuthFlowRemainingSeconds,
   getAuthFlowToken,
+  isFlowTokenExpired,
+  maskEmail,
   saveAuthFlow,
 } from '@/utils/authFlow'
 import { useAuth } from '@/hooks/useAuth'
@@ -20,12 +22,15 @@ export function VerifyEmailPage() {
   const [searchParams] = useSearchParams()
   const queryFlowToken = searchParams.get('flow') ?? ''
   const storedFlowToken = getAuthFlowToken('verify_email')
-  const flowToken = useMemo(() => queryFlowToken || storedFlowToken, [queryFlowToken, storedFlowToken])
+  const rawFlowToken = useMemo(() => queryFlowToken || storedFlowToken, [queryFlowToken, storedFlowToken])
+  const flowExpired = Boolean(rawFlowToken && isFlowTokenExpired(rawFlowToken))
+  const flowToken = flowExpired ? '' : rawFlowToken
   const flowEmail = getAuthFlowEmail('verify_email')
 
   const [code, setCode] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isRequestingFreshCode, setIsRequestingFreshCode] = useState(false)
   const [timeLeft, setTimeLeft] = useState(() => getAuthFlowRemainingSeconds('verify_email'))
 
   useEffect(() => {
@@ -90,6 +95,34 @@ export function VerifyEmailPage() {
     }
   }
 
+  const handleRequestFreshCode = async () => {
+    if (!flowEmail) {
+      navigate('/register')
+      return
+    }
+
+    setError(null)
+    setIsRequestingFreshCode(true)
+    try {
+      const { data } = await authApi.restartVerifyEmail(flowEmail)
+      if (!data.flow_token) {
+        throw new Error('Новый процесс подтверждения не создан.')
+      }
+      saveAuthFlow('verify_email', data.flow_token, {
+        email: flowEmail,
+        resendAvailableAt: Date.now() + (data.retry_after ?? 60) * 1000,
+      })
+      setCode('')
+      setTimeLeft(data.retry_after ?? 60)
+      navigate(`/verify-email?flow=${encodeURIComponent(data.flow_token)}`, { replace: true })
+      pushToast({ title: 'Новый код отправлен', message: `Проверьте ${maskEmail(flowEmail)}`, tone: 'info' })
+    } catch (requestError) {
+      setError(getErrorMessage(requestError, 'Не удалось получить новый код.'))
+    } finally {
+      setIsRequestingFreshCode(false)
+    }
+  }
+
   return (
     <div className="theme-auth-card w-full max-w-sm bg-surface rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8">
       <div className="text-center mb-6">
@@ -106,12 +139,25 @@ export function VerifyEmailPage() {
         <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Подтверждение email</h1>
         <p className="text-sm text-slate-500 mt-2 leading-relaxed">
           {flowEmail
-            ? `Код отправлен на ${flowEmail}. Проверьте папку «Спам», если письма нет во входящих.`
+            ? `Код отправлен на ${maskEmail(flowEmail)}. Проверьте папку «Спам», если письма нет во входящих.`
             : 'Код отправлен на вашу почту. Проверьте папку «Спам». '}
         </p>
       </div>
 
-      {!flowToken ? (
+      {flowExpired ? (
+        <div className="mb-6 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 text-left">
+          <p className="text-sm font-semibold text-slate-800">Срок действия кода истёк</p>
+          <p className="mt-1 text-sm text-slate-600">Получите новый код — старая форма больше не активна.</p>
+          <button
+            type="button"
+            onClick={() => void handleRequestFreshCode()}
+            disabled={isRequestingFreshCode}
+            className="mt-3 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-60"
+          >
+            {isRequestingFreshCode ? 'Отправляем...' : 'Получить новый код'}
+          </button>
+        </div>
+      ) : !flowToken ? (
         <div className="mb-6 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 text-left">
           <p className="text-sm font-semibold text-slate-800">Шаг подтверждения не найден</p>
           <p className="mt-1 text-sm text-slate-600">
@@ -129,7 +175,7 @@ export function VerifyEmailPage() {
         </div>
       ) : null}
 
-      <form onSubmit={handleSubmit} className="space-y-6">
+      {flowToken ? <form onSubmit={handleSubmit} className="space-y-6">
         <div>
           <input
             type="text"
@@ -152,9 +198,9 @@ export function VerifyEmailPage() {
         >
           {isSubmitting ? 'Подтверждаем...' : 'Подтвердить'}
         </button>
-      </form>
+      </form> : null}
 
-      <div className="mt-6 text-center">
+      {flowToken ? <div className="mt-6 text-center">
         <button
           type="button"
           onClick={() => void handleResend()}
@@ -165,7 +211,7 @@ export function VerifyEmailPage() {
         >
           Отправить код повторно {!canResend ? `(${timeLeft})` : ''}
         </button>
-      </div>
+      </div> : null}
 
       <div className="mt-4 text-center">
         <Link to="/login" className="text-xs text-slate-400 hover:text-indigo-600 transition-colors">

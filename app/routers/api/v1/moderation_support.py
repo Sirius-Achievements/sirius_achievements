@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import math
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel
@@ -12,6 +13,7 @@ from app.infrastructure.database import get_db
 from app.middlewares.api_auth_middleware import auth
 from app.models.enums import SupportTicketStatus, UserRole
 from app.models.support_ticket import SupportTicket
+from app.models.support_message import SupportMessage
 from app.models.user import Users
 from app.repositories.admin.support_repository import SupportTicketRepository
 from app.services.admin.support_service import SupportService
@@ -27,6 +29,10 @@ router = APIRouter(prefix='/api/v1/moderation/support', tags=['api.v1.moderation
 
 class ReopenPayload(BaseModel):
     session_duration: str | None = 'month'
+
+
+class ClosePayload(BaseModel):
+    resolution: str
 
 
 def get_support_service(db: AsyncSession = Depends(get_db)):
@@ -69,6 +75,44 @@ def _can_manage_ticket(user, ticket) -> bool:
     return ticket.moderator_id == user.id
 
 
+async def _support_queue_stats(db: AsyncSession, current_user) -> dict[str, int]:
+    """Return shared queue counters within the moderator's access zone."""
+    stmt = select(SupportTicket).join(Users, SupportTicket.user_id == Users.id).filter(
+        SupportTicket.status.in_([SupportTicketStatus.OPEN, SupportTicketStatus.IN_PROGRESS]),
+        SupportTicket.archived_at.is_(None),
+    )
+    education_level, courses, groups = _moderator_zone(current_user)
+    if education_level is not None:
+        stmt = stmt.filter(Users.education_level == education_level)
+    if courses:
+        course_values = [int(item) for item in str(courses).split(',') if item.isdigit()]
+        if course_values:
+            stmt = stmt.filter(Users.course.in_(course_values))
+    if groups:
+        group_values = [item.strip() for item in str(groups).split(',') if item.strip()]
+        if group_values:
+            stmt = stmt.filter(Users.study_group.in_(group_values))
+
+    tickets = (await db.execute(stmt)).scalars().all()
+    overdue_before = datetime.now(timezone.utc) - timedelta(hours=48)
+
+    def normalized(value):
+        if value is None:
+            return None
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+    return {
+        'active': len(tickets),
+        'free': sum(1 for ticket in tickets if ticket.moderator_id is None),
+        'mine': sum(1 for ticket in tickets if ticket.moderator_id == current_user.id),
+        'overdue': sum(
+            1
+            for ticket in tickets
+            if normalized(ticket.assigned_at or ticket.created_at) < overdue_before
+        ),
+    }
+
+
 async def _notify_support_user(db: AsyncSession, user_id: int, title: str, message: str, link: str):
     notification = make_notification(user_id=user_id, title=title, message=message, link=link)
     db.add(notification)
@@ -108,6 +152,7 @@ async def moderation_support_queue(
         'total_pages': total_pages,
         'total': int(total or 0),
         'view': 'new',
+        'stats': await _support_queue_stats(db, current_user),
     }
 
 
@@ -141,6 +186,7 @@ async def moderation_support_chats(
         'total_pages': total_pages,
         'total': int(total or 0),
         'view': 'chats',
+        'stats': await _support_queue_stats(db, current_user),
     }
 
 
@@ -211,6 +257,7 @@ async def moderation_support_all(
         'total_pages': total_pages,
         'total': int(total or 0),
         'view': 'all',
+        'stats': await _support_queue_stats(db, current_user),
     }
 
 
@@ -227,6 +274,10 @@ async def moderation_support_chat(
         raise HTTPException(status_code=404, detail='Ticket not found')
     if not _can_access_ticket(current_user, ticket):
         raise HTTPException(status_code=403, detail='Access denied')
+
+    if ticket.moderator_unread_count:
+        ticket.moderator_unread_count = 0
+        await db.commit()
 
     return {
         'ticket': serialize_support_ticket(ticket, include_messages=True),
@@ -272,6 +323,7 @@ async def send_moderator_message(
     text: str | None = Form(default=None),
     file: UploadFile | None = File(default=None),
     session_duration: str = Form(default='month'),
+    reply_to_id: int | None = Form(default=None),
     current_user=Depends(require_moderator),
     db: AsyncSession = Depends(get_db),
     service: SupportService = Depends(get_support_service),
@@ -282,6 +334,10 @@ async def send_moderator_message(
         raise HTTPException(status_code=404, detail='Ticket not found')
     if not _can_manage_ticket(current_user, ticket):
         raise HTTPException(status_code=409, detail='Ticket is already assigned to another moderator')
+    if reply_to_id is not None:
+        reply_to = await db.get(SupportMessage, reply_to_id)
+        if not reply_to or reply_to.ticket_id != ticket_id:
+            raise HTTPException(status_code=400, detail='Цитируемое сообщение не найдено в этом обращении.')
 
     try:
         message = await service.send_message(
@@ -291,6 +347,7 @@ async def send_moderator_message(
             file=file if file and file.filename else None,
             is_from_moderator=True,
             session_duration=session_duration,
+            reply_to_id=reply_to_id,
         )
         await _notify_support_user(
             db,
@@ -313,6 +370,7 @@ async def send_moderator_message(
 @router.post('/{ticket_id}/close')
 async def close_ticket(
     ticket_id: int,
+    payload: ClosePayload,
     current_user=Depends(require_moderator),
     db: AsyncSession = Depends(get_db),
     service: SupportService = Depends(get_support_service),
@@ -325,7 +383,9 @@ async def close_ticket(
         raise HTTPException(status_code=409, detail='Ticket is already assigned to another moderator')
 
     try:
-        await service.close_ticket(ticket_id)
+        if payload.resolution not in {'resolved', 'product_bug', 'document_question', 'duplicate'}:
+            raise HTTPException(status_code=400, detail='Выберите результат закрытия.')
+        await service.close_ticket(ticket_id, resolution=payload.resolution)
         await _notify_support_user(
             db,
             ticket.user_id,

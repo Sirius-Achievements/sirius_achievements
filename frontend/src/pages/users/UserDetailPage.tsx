@@ -5,6 +5,7 @@ import Chart from 'chart.js/auto'
 import { documentsApi } from '@/api/documents'
 import { usersApi } from '@/api/users'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useAuth } from '@/hooks/useAuth'
 import { useTheme } from '@/hooks/useTheme'
 import { useToast } from '@/hooks/useToast'
@@ -50,6 +51,7 @@ export function UserDetailPage() {
   const radarChartRef = useRef<HTMLCanvasElement | null>(null)
   const radarInstanceRef = useRef<Chart | null>(null)
   const [hiddenCats, setHiddenCats] = useState<Set<string>>(new Set())
+  const [activeTab, setActiveTab] = useState<'overview' | 'documents' | 'analytics' | 'notes' | 'history'>('overview')
   const [detail, setDetail] = useState<UserDetailResponse | null>(null)
   const [resumeText, setResumeText] = useState('')
   const [canGenerateResume, setCanGenerateResume] = useState(false)
@@ -81,12 +83,17 @@ export function UserDetailPage() {
   const [notePreviewLoading, setNotePreviewLoading] = useState(false)
   const noteFileInputRef = useRef<HTMLInputElement>(null)
   const notePreviewUrlRef = useRef<string | null>(null)
+  const [confirmTarget, setConfirmTarget] = useState<{ kind: 'note' | 'user' | 'document'; id?: number; title: string } | null>(null)
+  const [confirmBusy, setConfirmBusy] = useState(false)
 
   const backUrl = useMemo(() => {
     const params = new URLSearchParams(location.search)
+    const explicitReturn = params.get('return')
+    if (explicitReturn?.startsWith('/')) return explicitReturn
     const from = params.get('from')
     if (from === 'documents') return '/documents'
     if (from === 'moderation') return '/moderation/users'
+    if (from === 'moderation-achievements') return '/moderation/achievements'
     if (from === 'leaderboard') return '/leaderboard'
     if (from === 'support') {
       const ticketId = params.get('ticket_id')
@@ -212,7 +219,7 @@ export function UserDetailPage() {
       chartInstanceRef.current?.destroy()
       chartInstanceRef.current = null
     }
-  }, [detail, isLoading, theme])
+  }, [activeTab, detail, isLoading, theme])
 
   useEffect(() => {
     if (!radarChartRef.current || !detail?.achievements?.length) return
@@ -279,7 +286,7 @@ export function UserDetailPage() {
       radarInstanceRef.current?.destroy()
       radarInstanceRef.current = null
     }
-  }, [detail, hiddenCats, isLoading, theme])
+  }, [activeTab, detail, hiddenCats, isLoading, theme])
 
   const handleRoleSave = async () => {
     setIsSavingRole(true)
@@ -418,25 +425,12 @@ export function UserDetailPage() {
   }
 
   const handleDeleteNote = async (noteId: number) => {
-    if (!window.confirm('Удалить заметку?')) return
-    try {
-      await usersApi.deleteNote(userId, noteId)
-      setNotes((prev) => prev.filter((n) => n.id !== noteId))
-      pushToast({ title: 'Заметка удалена', tone: 'success' })
-    } catch (err) {
-      setError(getErrorMessage(err, 'Не удалось удалить заметку.'))
-    }
+    setConfirmTarget({ kind: 'note', id: noteId, title: 'служебную заметку' })
   }
 
   const handleDeleteUser = async () => {
-    if (!detail || !window.confirm(`Перенести пользователя ${detail.user.first_name} ${detail.user.last_name} в удалённые?`)) return
-    try {
-      await usersApi.delete(userId)
-      pushToast({ title: 'Пользователь удалён', tone: 'success' })
-      await load()
-    } catch (deleteError) {
-      setError(getErrorMessage(deleteError, 'Не удалось удалить пользователя.'))
-    }
+    if (!detail) return
+    setConfirmTarget({ kind: 'user', title: `${detail.user.first_name} ${detail.user.last_name}` })
   }
 
   const handleSendSupportMessage = async () => {
@@ -482,13 +476,31 @@ export function UserDetailPage() {
   }
 
   const handleDeleteDocument = async (documentId: number, title: string) => {
-    if (!window.confirm(`Удалить документ «${title}»?`)) return
+    setConfirmTarget({ kind: 'document', id: documentId, title })
+  }
+
+  const runConfirmedAction = async () => {
+    if (!confirmTarget) return
+    setConfirmBusy(true)
     try {
-      await documentsApi.delete(documentId)
-      pushToast({ title: 'Документ удалён', tone: 'success' })
-      await load()
-    } catch (deleteError) {
-      setError(getErrorMessage(deleteError, 'Не удалось удалить документ.'))
+      if (confirmTarget.kind === 'note' && confirmTarget.id) {
+        await usersApi.deleteNote(userId, confirmTarget.id)
+        setNotes((previous) => previous.filter((note) => note.id !== confirmTarget.id))
+        pushToast({ title: 'Заметка удалена', tone: 'success' })
+      } else if (confirmTarget.kind === 'user') {
+        await usersApi.delete(userId)
+        pushToast({ title: 'Пользователь перенесён в удалённые', tone: 'success' })
+        await load()
+      } else if (confirmTarget.kind === 'document' && confirmTarget.id) {
+        await documentsApi.delete(confirmTarget.id)
+        pushToast({ title: 'Документ удалён', tone: 'success' })
+        await load()
+      }
+      setConfirmTarget(null)
+    } catch (actionError) {
+      setError(getErrorMessage(actionError, 'Не удалось выполнить действие.'))
+    } finally {
+      setConfirmBusy(false)
     }
   }
 
@@ -501,6 +513,16 @@ export function UserDetailPage() {
   const visibleDocuments = detail.achievements.slice((safeDocumentsPage - 1) * documentsPerPage, safeDocumentsPage * documentsPerPage)
   const documentPageButtons = Array.from({ length: documentsTotalPages }, (_, index) => index + 1)
     .filter((page) => page <= 2 || page >= documentsTotalPages - 1 || Math.abs(page - safeDocumentsPage) <= 1)
+  const parsedGpa = Number.parseFloat(gpa.replace(',', '.'))
+  const gpaPreview = Number.isFinite(parsedGpa)
+    ? parsedGpa < 3
+      ? 0
+      : parsedGpa < 4
+        ? Math.floor((parsedGpa - 3) * 15)
+        : parsedGpa < 4.5
+          ? 15 + Math.floor((parsedGpa - 4) * 20)
+          : 25 + Math.floor((parsedGpa - 4.5) * 10)
+    : 0
 
   const studentPortrait = detail.user.role === 'STUDENT' && detail.achievements.length ? (() => {
     const pointsMap: Record<string, number> = {}
@@ -554,15 +576,45 @@ export function UserDetailPage() {
           {detail.user.role === 'STUDENT' && detail.user.status === 'active' ? <Link to={`/students/${detail.user.id}`} className="inline-flex items-center text-sm text-slate-500 hover:text-indigo-600 transition-colors bg-surface border border-slate-200 px-3 py-1.5 rounded-lg">Публичный профиль</Link> : null}
           {isAdminViewer && !readOnlyStaff ? <button type="button" onClick={() => setSupportModalOpen(true)} className="inline-flex items-center text-sm text-slate-500 hover:text-indigo-600 transition-colors bg-surface border border-slate-200 px-3 py-1.5 rounded-lg">Написать</button> : null}
           <button type="button" onClick={() => void handleExportPdf()} className="inline-flex items-center text-sm text-slate-500 hover:text-indigo-600 transition-colors bg-surface border border-slate-200 px-3 py-1.5 rounded-lg">{isExportingPdf ? 'PDF...' : 'PDF'}</button>
-          {isAdminViewer && !readOnlyStaff ? detail.user.status === 'deleted' ? <button type="button" onClick={() => void handleRestoreUser()} disabled={isRestoringUser} className="inline-flex items-center text-sm text-indigo-600 hover:text-indigo-700 transition-colors bg-surface border border-indigo-200 px-3 py-1.5 rounded-lg disabled:opacity-60">{isRestoringUser ? 'Восстановление...' : 'Восстановить'}</button> : <button type="button" onClick={() => void handleDeleteUser()} className="inline-flex items-center text-sm text-slate-500 hover:text-indigo-600 transition-colors bg-surface border border-slate-200 px-3 py-1.5 rounded-lg">Удалить</button> : null}
+          {isAdminViewer && !readOnlyStaff ? (
+            <details className="relative">
+              <summary className="cursor-pointer list-none rounded-lg border border-slate-200 bg-surface px-3 py-1.5 text-sm text-slate-500" aria-label="Дополнительные действия">•••</summary>
+              <div className="absolute right-0 z-20 mt-2 min-w-52 rounded-xl border border-slate-200 bg-surface p-2 shadow-lg">
+                {detail.user.status === 'deleted' ? (
+                  <button type="button" onClick={() => void handleRestoreUser()} disabled={isRestoringUser} className="w-full rounded-lg px-3 py-2 text-left text-sm text-indigo-600 hover:bg-indigo-50 disabled:opacity-60">{isRestoringUser ? 'Восстановление...' : 'Восстановить пользователя'}</button>
+                ) : (
+                  <button type="button" onClick={() => void handleDeleteUser()} className="w-full rounded-lg px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50">Перенести пользователя в удалённые</button>
+                )}
+              </div>
+            </details>
+          ) : null}
           <Link to={backUrl} className="text-sm text-slate-500 hover:text-indigo-600 flex items-center transition-colors">Назад</Link>
         </div>
       </div>
 
       {error ? <div className="bg-red-50 border border-red-100 text-red-600 text-sm px-4 py-3 rounded-lg">{error}</div> : null}
 
+      <nav className="flex gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-surface p-1" aria-label="Разделы карточки">
+        {[
+          ['overview', 'Обзор'],
+          ['documents', `Документы (${detail.total_docs})`],
+          ['analytics', 'Аналитика'],
+          ['notes', `Служебные заметки (${notes.length})`],
+          ['history', 'История действий'],
+        ].map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setActiveTab(key as typeof activeTab)}
+            className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition-colors ${activeTab === key ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
+
       <div className="space-y-5">
-        <div className={`grid grid-cols-1 gap-4 xl:grid-cols-[minmax(280px,0.8fr)_minmax(0,1.2fr)] ${isGuestOrPending && !isAdminViewer ? 'max-w-4xl mx-auto w-full' : ''}`}>
+        {activeTab === 'overview' ? <div className={`grid grid-cols-1 gap-4 xl:grid-cols-[minmax(280px,0.8fr)_minmax(0,1.2fr)] ${isGuestOrPending && !isAdminViewer ? 'max-w-4xl mx-auto w-full' : ''}`}>
           <div className="bg-surface rounded-xl border border-slate-200 p-4 text-center flex flex-col items-center shadow-sm">
             <div className="h-20 w-20 mb-3 relative">
               {detail.user.avatar_path ? <img className="h-20 w-20 rounded-full object-cover border border-slate-200" src={buildMediaUrl(detail.user.avatar_path)} alt="Avatar" /> : <div className="h-20 w-20 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600 text-2xl font-bold">{detail.user.first_name.slice(0, 1)}{detail.user.last_name.slice(0, 1)}</div>}
@@ -655,14 +707,14 @@ export function UserDetailPage() {
               <div><span className="block text-slate-500 text-[11px]">Телефон</span><span className="block truncate font-medium text-slate-800">{detail.user.phone_number || 'Не указан'}</span></div>
               <div><span className="block text-slate-500 text-[11px]">Регистрация</span><span className="font-medium text-slate-800">{detail.user.created_at ? new Date(detail.user.created_at).toLocaleDateString('ru-RU') : 'Дата не указана'}</span></div>
             </div>
-            {isAdminViewer && detail.user.role === 'STUDENT' ? <div className="border-t border-slate-100 bg-slate-50/50 p-4"><div className="mb-2 flex items-center justify-between gap-2"><h3 className="text-sm font-bold text-slate-700">Средний балл сессии</h3><span className="text-[10px] text-slate-400">Влияет на рейтинг</span></div><div className="flex gap-2"><input type="text" value={gpa} onChange={(event) => setGpa(event.target.value)} placeholder="4.5" className="min-w-0 flex-1 px-3 py-2 bg-surface border border-slate-200 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all" /><button type="button" onClick={() => void handleGpaSave()} className="bg-indigo-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors" disabled={isSavingGpa}>Сохранить</button></div><p className="text-[10px] text-slate-400 mt-1.5">От 2.0 до 5.0</p></div> : null}
+            {isAdminViewer && detail.user.role === 'STUDENT' ? <div className="border-t border-slate-100 bg-slate-50/50 p-4"><div className="mb-2 flex items-center justify-between gap-2"><h3 className="text-sm font-bold text-slate-700">Средний балл сессии</h3><span className="text-[10px] text-slate-400">Влияет на рейтинг</span></div><div className="flex gap-2"><input type="text" value={gpa} onChange={(event) => setGpa(event.target.value)} placeholder="4.5" className="min-w-0 flex-1 px-3 py-2 bg-surface border border-slate-200 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all" /><button type="button" onClick={() => void handleGpaSave()} className="bg-indigo-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors" disabled={isSavingGpa}>Сохранить</button></div><p className="text-[10px] text-slate-400 mt-1.5">Предварительный бонус: <strong className="text-indigo-600">+{gpaPreview} баллов</strong> · оценка от 2.0 до 5.0</p></div> : null}
           </div>
-        </div>
+        </div> : null}
 
         {!isGuestOrPending || isAdminViewer ? <div className="space-y-5">
-          {!isGuestOrPending ? <div className="grid grid-cols-1 gap-4 md:grid-cols-2"><div className="bg-surface p-5 rounded-xl border border-slate-200 shadow-sm"><div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Документов в текущем сезоне</div><div className="text-2xl font-semibold text-slate-800 mt-1">{detail.total_docs}</div></div>{detail.rank ? <div className="bg-surface p-5 rounded-xl border border-slate-200 flex justify-between items-center shadow-sm"><div><div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Текущее место</div><div className="text-2xl font-bold text-indigo-600 mt-1">#{detail.rank}</div></div><div className="w-px h-8 bg-slate-200" /><div className="text-right"><div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Баллы</div><div className="text-2xl font-bold text-indigo-600 mt-1">{detail.total_points}</div></div></div> : null}</div> : null}
+          {activeTab === 'overview' && !isGuestOrPending ? <div className="grid grid-cols-1 gap-4 md:grid-cols-2"><div className="bg-surface p-5 rounded-xl border border-slate-200 shadow-sm"><div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Документов в текущем сезоне</div><div className="text-2xl font-semibold text-slate-800 mt-1">{detail.total_docs}</div></div>{detail.rank ? <div className="bg-surface p-5 rounded-xl border border-slate-200 flex justify-between items-center shadow-sm"><div><div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Текущее место</div><div className="text-2xl font-bold text-indigo-600 mt-1">#{detail.rank}</div></div><div className="w-px h-8 bg-slate-200" /><div className="text-right"><div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Баллы</div><div className="text-2xl font-bold text-indigo-600 mt-1">{detail.total_points}</div></div></div> : null}</div> : null}
 
-          <div className="bg-indigo-50/60 p-5 sm:p-6 rounded-xl border border-indigo-100 shadow-sm">
+          {activeTab === 'overview' ? <div className="bg-indigo-50/60 p-5 sm:p-6 rounded-xl border border-indigo-100 shadow-sm">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
               <div><h3 className="text-base font-bold text-indigo-900">AI-сводка профиля</h3><p className="text-xs text-indigo-700/70 mt-1">Формируется автоматически на основе подтверждённых достижений студента.</p></div>
               <button
@@ -674,13 +726,14 @@ export function UserDetailPage() {
                 {isGeneratingResume ? 'Генерируем...' : resumeText ? 'Обновить' : 'Сгенерировать'}
               </button>
             </div>
+            {detail.user.resume_generated_at ? <p className="mb-3 text-[11px] text-indigo-700/70">Последнее создание: {new Date(detail.user.resume_generated_at).toLocaleString('ru-RU')} · источник: подтверждённые достижения, баллы и данные обучения</p> : null}
             {resumeText ? <div className="bg-surface border border-indigo-100/80 rounded-lg p-4 text-sm text-slate-800 whitespace-pre-wrap leading-relaxed shadow-sm">{resumeText}</div> : <div className="text-center py-6 bg-surface/50 border border-indigo-100 border-dashed rounded-lg text-indigo-400 text-xs mt-2">Резюме ещё не сформировано.</div>}
             {!canGenerateResume && resumeReason ? <p className="mt-2 text-[11px] text-indigo-400">{resumeReason}</p> : null}
-          </div>
+          </div> : null}
 
-          {detail.season_history.length ? <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden text-white shadow-md relative"><div className="px-5 py-3 border-b border-slate-700/50 flex justify-between items-center relative z-10"><h3 className="text-sm font-bold text-white">Зал славы (Архив сезонов)</h3></div><div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4 relative z-10">{detail.season_history.map((item) => <div key={item.id} className="bg-surface/10 rounded-lg p-4 flex justify-between items-center border border-white/5 hover:bg-surface/20 transition-colors"><div><div className="text-xs font-bold text-slate-200">{item.season_name}</div><div className="text-[10px] text-slate-400 mt-1 uppercase tracking-wider font-semibold">Место: <span className="text-white text-sm">#{item.rank}</span></div></div><div className="text-xl font-black text-yellow-400">{item.points} <span className="text-[10px] font-normal text-slate-400">б.</span></div></div>)}</div></div> : null}
+          {activeTab === 'documents' && detail.season_history.length ? <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden text-white shadow-md relative"><div className="px-5 py-3 border-b border-slate-700/50 flex justify-between items-center relative z-10"><h3 className="text-sm font-bold text-white">Зал славы (Архив сезонов)</h3></div><div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4 relative z-10">{detail.season_history.map((item) => <div key={item.id} className="bg-surface/10 rounded-lg p-4 flex justify-between items-center border border-white/5 hover:bg-surface/20 transition-colors"><div><div className="text-xs font-bold text-slate-200">{item.season_name}</div><div className="text-[10px] text-slate-400 mt-1 uppercase tracking-wider font-semibold">Место: <span className="text-white text-sm">#{item.rank}</span></div></div><div className="text-xl font-black text-yellow-400">{item.points} <span className="text-[10px] font-normal text-slate-400">б.</span></div></div>)}</div></div> : null}
 
-          <div className="bg-surface rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+          {activeTab === 'documents' ? <div className="bg-surface rounded-xl border border-slate-200 overflow-hidden shadow-sm">
             <div className="px-5 py-3 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
               <h3 className="text-sm font-bold text-slate-700">Документы текущего сезона</h3>
             </div>
@@ -745,11 +798,11 @@ export function UserDetailPage() {
                 </div>
               </div>
             ) : null}
-          </div>
+          </div> : null}
 
-          {detail.user.role === 'STUDENT' ? <section className="overflow-hidden rounded-xl border border-slate-200 bg-surface shadow-sm"><div className="border-b border-slate-100 px-5 py-3"><h3 className="text-sm font-semibold text-slate-700">Аналитика достижений</h3><p className="mt-0.5 text-xs text-slate-400">Динамика баллов и распределение по направлениям</p></div><div className="grid gap-4 p-4 lg:grid-cols-2"><div className="rounded-xl border border-slate-100 bg-slate-50/60 p-3"><h4 className="mb-2 text-xs font-semibold text-slate-600">Динамика</h4>{detail.chart_labels.length ? <div className="h-56"><canvas ref={chartRef} /></div> : <div className="flex h-56 items-center justify-center text-center text-sm text-slate-400">Нет одобренных достижений для отображения графика</div>}</div>{studentPortrait}</div></section> : null}
+          {activeTab === 'analytics' && detail.user.role === 'STUDENT' ? <section className="overflow-hidden rounded-xl border border-slate-200 bg-surface shadow-sm"><div className="border-b border-slate-100 px-5 py-3"><h3 className="text-sm font-semibold text-slate-700">Аналитика достижений</h3><p className="mt-0.5 text-xs text-slate-400">Динамика баллов и распределение по направлениям</p></div><div className="grid gap-4 p-4 lg:grid-cols-2"><div className="rounded-xl border border-slate-100 bg-slate-50/60 p-3"><h4 className="mb-2 text-xs font-semibold text-slate-600">Динамика</h4>{detail.chart_labels.length ? <div className="h-56"><canvas ref={chartRef} /></div> : <div className="flex h-56 items-center justify-center text-center text-sm text-slate-400">Нет одобренных достижений для отображения графика</div>}</div>{studentPortrait}</div></section> : null}
 
-          {detail.user.role === 'STUDENT' ? (
+          {activeTab === 'notes' && detail.user.role === 'STUDENT' ? (
           <div className="bg-surface rounded-xl border border-slate-200 overflow-hidden shadow-sm">
             <div className="px-5 py-3 border-b border-slate-100 flex items-center gap-2">
               <svg className="w-4 h-4 text-amber-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
@@ -829,8 +882,43 @@ export function UserDetailPage() {
           </div>
           ) : null}
 
+          {activeTab === 'history' ? (
+            <section className="overflow-hidden rounded-xl border border-slate-200 bg-surface shadow-sm">
+              <div className="border-b border-slate-100 px-5 py-3">
+                <h3 className="text-sm font-bold text-slate-700">История действий</h3>
+                <p className="mt-0.5 text-xs text-slate-400">Изменения роли, GPA, статуса и другие административные действия.</p>
+              </div>
+              {detail.audit_log.length ? (
+                <ul className="divide-y divide-slate-100">
+                  {detail.audit_log.map((entry) => (
+                    <li key={entry.id} className="grid gap-1 px-5 py-3 text-sm sm:grid-cols-[180px_1fr_auto]">
+                      <span className="font-medium text-slate-700">{entry.actor}</span>
+                      <span className="text-slate-600">{entry.action}{entry.details ? ` · ${entry.details}` : ''}</span>
+                      <span className="text-xs text-slate-400">{entry.created_at ? new Date(entry.created_at).toLocaleString('ru-RU') : '—'}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : <div className="p-10 text-center text-sm text-slate-400">История пока пуста.</div>}
+            </section>
+          ) : null}
+
         </div> : null}
       </div>
+
+      <ConfirmDialog
+        open={confirmTarget !== null}
+        title={confirmTarget?.kind === 'user' ? 'Перенести пользователя в удалённые?' : 'Подтвердите удаление'}
+        message={confirmTarget ? (
+          confirmTarget.kind === 'user'
+            ? <>Аккаунт <strong>{confirmTarget.title}</strong> будет деактивирован и останется доступен для восстановления.</>
+            : <>Удалить {confirmTarget.kind === 'document' ? 'документ' : ''} <strong>{confirmTarget.kind === 'document' ? `«${confirmTarget.title}»` : confirmTarget.title}</strong>?</>
+        ) : null}
+        confirmLabel={confirmTarget?.kind === 'user' ? 'Перенести' : 'Удалить'}
+        tone="danger"
+        busy={confirmBusy}
+        onConfirm={() => void runConfirmedAction()}
+        onCancel={() => { if (!confirmBusy) setConfirmTarget(null) }}
+      />
 
       {notePreview && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={closeNotePreview}>

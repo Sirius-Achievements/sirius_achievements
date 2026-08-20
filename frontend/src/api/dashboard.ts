@@ -26,7 +26,7 @@ export interface DashboardStats {
     category?: string
     user?: { first_name: string; last_name: string }
   }>
-  chart_data?: { labels: string[]; counts: number[]; points?: number[] }
+  chart_data?: { labels: string[]; counts: number[]; points?: number[]; dates?: string[] }
   cohorts?: Array<{
     education_level: string
     kind?: 'course' | 'group'
@@ -40,6 +40,9 @@ export interface DashboardStats {
   gpa_bonus?: number
   my_docs?: number
   my_rank?: number
+  next_rank?: number
+  points_to_next_rank?: number
+  profile_completion?: number
   my_recent_docs?: Array<{
     id: number
     title: string
@@ -51,6 +54,9 @@ export interface DashboardStats {
   category_breakdown?: Array<{ category: string; points: number }>
   category_activity?: Array<{ category: string; count: number; points: number }>
   rejected_achievements?: number
+  revision_achievements?: number
+  staff_queue?: { free: number; mine: number; overdue: number }
+  trend?: { new_users: number; documents: number; approved: number } | null
   users_stats?: {
     total: number
     active: number
@@ -75,7 +81,7 @@ export interface DashboardStats {
     in_progress: number
     closed: number
   }
-  recommendations?: Array<{ title: string; message: string }>
+  recommendations?: Array<{ title: string; message: string; action_label?: string; action_url?: string }>
 }
 
 export interface InboxCounts {

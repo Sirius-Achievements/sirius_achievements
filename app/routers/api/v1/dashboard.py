@@ -208,6 +208,12 @@ def _parse_date_range(period: str, date_from: str | None, date_to: str | None):
     return start_date, end_date, date_trunc, date_fmt
 
 
+def _percent_change(current: int, previous: int) -> int:
+    if previous == 0:
+        return 100 if current > 0 else 0
+    return round(((current - previous) / previous) * 100)
+
+
 @router.get('')
 @router.get('/')
 async def dashboard(
@@ -279,6 +285,62 @@ async def dashboard(
             user,
         )
         ach_stats = (await db.execute(ach_stats_stmt)).first()
+
+        overdue_before = datetime.now() - timedelta(hours=48)
+        queue_stats_stmt = _staff_scoped_achievement_stmt(
+            select(
+                func.count().filter(
+                    Achievement.status == AchievementStatus.PENDING,
+                    Achievement.moderator_id.is_(None),
+                ).label('free'),
+                func.count().filter(
+                    Achievement.status == AchievementStatus.PENDING,
+                    Achievement.moderator_id == user.id,
+                ).label('mine'),
+                func.count().filter(
+                    Achievement.status == AchievementStatus.PENDING,
+                    Achievement.created_at < overdue_before,
+                ).label('overdue'),
+            ),
+            user,
+        )
+        queue_stats = (await db.execute(queue_stats_stmt)).first()
+
+        trend = None
+        if period != 'all' or date_from or date_to:
+            comparison_window = end_date - start_date
+            previous_start = start_date - comparison_window
+            previous_end = start_date
+            previous_users_stmt = _apply_staff_user_scope(
+                select(func.count()).select_from(Users).filter(
+                    Users.role == UserRole.STUDENT,
+                    Users.status != UserStatus.REJECTED,
+                    Users.created_at >= previous_start,
+                    Users.created_at < previous_end,
+                ),
+                user,
+            )
+            previous_achievements_stmt = _staff_scoped_achievement_stmt(
+                select(
+                    func.count().filter(
+                        Achievement.created_at >= previous_start,
+                        Achievement.created_at < previous_end,
+                    ).label('total'),
+                    func.count().filter(
+                        Achievement.status == AchievementStatus.APPROVED,
+                        Achievement.updated_at >= previous_start,
+                        Achievement.updated_at < previous_end,
+                    ).label('approved'),
+                ),
+                user,
+            )
+            previous_users = int((await db.execute(previous_users_stmt)).scalar() or 0)
+            previous_achievements = (await db.execute(previous_achievements_stmt)).first()
+            trend = {
+                'new_users': _percent_change(int(new_users_count), previous_users),
+                'documents': _percent_change(int(ach_stats.total or 0), int(previous_achievements.total or 0)),
+                'approved': _percent_change(int(ach_stats.approved or 0), int(previous_achievements.approved or 0)),
+            }
 
         support_stats_stmt = _staff_scoped_support_stmt(
             select(
@@ -389,6 +451,8 @@ async def dashboard(
             {
                 'title': f'Усилить направление «{category.value}»',
                 'message': 'В выбранном периоде мало подтверждений по этому направлению. Можно отдельно напомнить студентам загрузить документы.',
+                'action_label': 'Открыть документы направления',
+                'action_url': f'/documents?category={category.value}',
             }
             for category in AchievementCategory
             if category.value not in active_categories
@@ -402,6 +466,12 @@ async def dashboard(
             'approved_achievements': int(ach_stats.approved or 0),
             'rejected_achievements': int(ach_stats.rejected or 0),
             'total_achievements': int(ach_stats.total or 0),
+            'staff_queue': {
+                'free': int(queue_stats.free or 0),
+                'mine': int(queue_stats.mine or 0),
+                'overdue': int(queue_stats.overdue or 0),
+            },
+            'trend': trend,
             'users_stats': {
                 'total': int(user_stats.total or 0),
                 'active': int(user_stats.active or 0),
@@ -442,6 +512,7 @@ async def dashboard(
             'chart_data': {
                 'labels': [row.bucket.strftime(date_fmt) for row in chart_rows] if chart_rows else [],
                 'counts': [int(row.cnt or 0) for row in chart_rows] if chart_rows else [],
+                'dates': [row.bucket.date().isoformat() for row in chart_rows] if chart_rows else [],
             },
             'cohorts': [
                 {
@@ -497,6 +568,7 @@ async def dashboard(
             func.count().filter(Achievement.user_id == user.id, Achievement.status == AchievementStatus.PENDING, Achievement.created_at >= start_date, Achievement.created_at < end_date).label('pending'),
             func.count().filter(Achievement.user_id == user.id, Achievement.status == AchievementStatus.APPROVED, Achievement.updated_at >= start_date, Achievement.updated_at < end_date).label('approved'),
             func.count().filter(Achievement.user_id == user.id, Achievement.status == AchievementStatus.REJECTED, Achievement.updated_at >= start_date, Achievement.updated_at < end_date).label('rejected'),
+            func.count().filter(Achievement.user_id == user.id, Achievement.status == AchievementStatus.REVISION).label('revision'),
         )
     )).first()
 
@@ -523,11 +595,19 @@ async def dashboard(
     )
 
     my_rank = 0
+    points_to_next_rank = 0
+    next_rank = 0
     if my_points > 0:
         better_than_me = (await db.execute(
             select(func.count()).filter(subquery_points.c.total_points > my_points)
         )).scalar() or 0
         my_rank = int(better_than_me) + 1
+        next_points = (await db.execute(
+            select(func.min(subquery_points.c.total_points)).filter(subquery_points.c.total_points > my_points)
+        )).scalar()
+        if next_points is not None and my_rank > 1:
+            points_to_next_rank = max(int(next_points) - my_points, 0)
+            next_rank = my_rank - 1
 
     recent_docs = (await db.execute(
         select(Achievement)
@@ -562,10 +642,24 @@ async def dashboard(
         {
             'title': f'Попробуйте направление «{category.value}»',
             'message': 'Там пока мало подтверждённых достижений, поэтому новый документ поможет сделать профиль сбалансированнее.',
+            'action_label': f'Добавить достижение в категории «{category.value}»',
+            'action_url': f'/achievements?new=1&category={category.value}',
         }
         for category in AchievementCategory
         if category.value not in achieved_categories
     ][:3]
+
+    profile_fields = [
+        user.first_name,
+        user.last_name,
+        user.email,
+        user.education_level,
+        user.course,
+        user.study_group,
+        user.phone_number,
+        user.avatar_path,
+    ]
+    profile_completion = round((sum(value not in (None, '') for value in profile_fields) / len(profile_fields)) * 100)
 
     return {
         'date_from': start_date.date().isoformat(),
@@ -574,13 +668,15 @@ async def dashboard(
         'gpa_bonus': int(gpa_bonus),
         'my_docs': int(doc_stats.total or 0),
         'my_rank': my_rank,
+        'next_rank': next_rank,
+        'points_to_next_rank': points_to_next_rank,
+        'profile_completion': profile_completion,
         'my_recent_docs': [serialize_achievement(item) for item in recent_docs],
         'category_breakdown': category_breakdown,
         'pending_achievements': int(doc_stats.pending or 0),
         'approved_achievements': int(doc_stats.approved or 0),
         'rejected_achievements': int(doc_stats.rejected or 0),
+        'revision_achievements': int(doc_stats.revision or 0),
         'recommendations': recommendations,
     }
-
-
 

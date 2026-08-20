@@ -4,6 +4,7 @@ import { Chart, registerables } from 'chart.js'
 import Cropper, { DEFAULT_TEMPLATE } from 'cropperjs'
 import { profileApi, type ProfileResponse } from '@/api/profile'
 import { usersApi } from '@/api/users'
+import { PasswordRequirements } from '@/components/auth/PasswordRequirements'
 import { DocumentPreviewImage } from '@/components/ui/DocumentPreviewImage'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { useAuth } from '@/hooks/useAuth'
@@ -26,6 +27,8 @@ const AVATAR_CROPPER_TEMPLATE = DEFAULT_TEMPLATE.replace(
 function stripEmoji(value: string): string {
   return value.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, '').replace(/\s{2,}/g, ' ')
 }
+
+type ProfileTab = 'overview' | 'documents' | 'analytics' | 'settings' | 'security'
 
 function docStatusBadge(status: string, points?: number) {
   switch (status) {
@@ -66,12 +69,14 @@ export function ProfilePage() {
   const [profile, setProfile] = useState<ProfileResponse | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'profile' | 'security'>('profile')
+  const [activeTab, setActiveTab] = useState<ProfileTab>(() => user?.role === UserRole.STUDENT ? 'overview' : 'settings')
 
   // Profile form
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [phoneNumber, setPhoneNumber] = useState('')
+  const [publicVisibility, setPublicVisibility] = useState<Record<string, boolean>>({})
+  const initialProfileRef = useRef({ firstName: '', lastName: '', phoneNumber: '', publicVisibility: '{}' })
   const [isSavingProfile, setIsSavingProfile] = useState(false)
 
   // Avatar + cropper
@@ -144,6 +149,13 @@ export function ProfilePage() {
       setFirstName(data.user.first_name)
       setLastName(data.user.last_name)
       setPhoneNumber(data.user.phone_number ?? '')
+      setPublicVisibility(data.public_visibility ?? {})
+      initialProfileRef.current = {
+        firstName: data.user.first_name,
+        lastName: data.user.last_name,
+        phoneNumber: data.user.phone_number ?? '',
+        publicVisibility: JSON.stringify(data.public_visibility ?? {}),
+      }
       revokeAvatarBlobUrl()
       setAvatarPreviewUrl(data.user.avatar_path ? buildMediaUrl(data.user.avatar_path, `${Date.now()}`) : null)
       setResumeText(data.user.resume_text ?? '')
@@ -167,9 +179,27 @@ export function ProfilePage() {
     }
   }, [revokeAvatarBlobUrl, revokeCropSourceUrl])
 
+  const hasUnsavedProfileChanges = Boolean(
+    croppedFile
+    || firstName !== initialProfileRef.current.firstName
+    || lastName !== initialProfileRef.current.lastName
+    || phoneNumber !== initialProfileRef.current.phoneNumber
+    || JSON.stringify(publicVisibility) !== initialProfileRef.current.publicVisibility
+  )
+
+  useEffect(() => {
+    const warnBeforeLeave = (event: BeforeUnloadEvent) => {
+      if (!hasUnsavedProfileChanges) return
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', warnBeforeLeave)
+    return () => window.removeEventListener('beforeunload', warnBeforeLeave)
+  }, [hasUnsavedProfileChanges])
+
   // Chart init
   useEffect(() => {
-    if (!profile || !profile.has_chart_data || !chartRef.current || !isStudent) return
+    if (!profile || !profile.has_chart_data || activeTab !== 'analytics' || !chartRef.current || !isStudent) return
     if (chartInstanceRef.current) chartInstanceRef.current.destroy()
 
     const font = { family: "'Inter', system-ui, sans-serif", size: 11 }
@@ -279,12 +309,12 @@ export function ProfilePage() {
       chartInstanceRef.current?.destroy()
       chartInstanceRef.current = null
     }
-  }, [profile, isStudent, theme])
+  }, [activeTab, profile, isStudent, theme])
 
   // Radar chart by category (approved docs) — one dataset per category, toggle support
   const RADAR_CATS = ['Спорт', 'Наука', 'Искусство', 'Волонтёрство', 'Хакатон', 'Патриотизм', 'Проекты', 'Другое']
   useEffect(() => {
-    if (!profile || !isStudent || !radarChartRef.current) return
+    if (!profile || !isStudent || activeTab !== 'analytics' || !radarChartRef.current) return
     const pointsMap: Record<string, number> = {}
     for (const cat of RADAR_CATS) pointsMap[cat] = 0
     for (const doc of profile.my_docs) {
@@ -357,7 +387,7 @@ export function ProfilePage() {
       radarInstanceRef.current?.destroy()
       radarInstanceRef.current = null
     }
-  }, [profile, isStudent, hiddenCats, theme])
+  }, [activeTab, profile, isStudent, hiddenCats, theme])
 
   // Cropper init when modal opens
   useEffect(() => {
@@ -436,6 +466,7 @@ export function ProfilePage() {
       formData.append('first_name', firstName)
       formData.append('last_name', lastName)
       formData.append('phone_number', phoneNumber)
+      formData.append('public_visibility', JSON.stringify(publicVisibility))
       if (croppedFile) formData.append('avatar', croppedFile)
       const { data } = await profileApi.update(formData)
       setCurrentUser(data.user)
@@ -462,6 +493,7 @@ export function ProfilePage() {
         setResumeText(data.resume)
         pushToast({ title: 'Резюме успешно обновлено', tone: 'success' })
       }
+      await load()
       if (data.can_generate !== undefined) {
         setCanGenerate(data.can_generate)
         setGenerateReason(data.reason ?? '')
@@ -561,10 +593,10 @@ export function ProfilePage() {
 
   return (
     <>
-      <div className="max-w-2xl mx-auto">
+      <div className="max-w-5xl mx-auto">
         {/* Header */}
         <div className="mb-4 flex flex-wrap items-center gap-3 justify-between">
-          <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Настройки профиля</h2>
+          <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Мой профиль</h2>
           {isStudent && (
             <a
               href={`/students/${user?.id}`}
@@ -583,31 +615,53 @@ export function ProfilePage() {
         </div>
 
         {/* Tabs */}
-        <div className="flex p-1 bg-slate-100 rounded-lg mb-6 w-max">
-          <button
-            onClick={() => setActiveTab('profile')}
-            className={`px-4 py-1.5 rounded-md text-xs font-medium transition-colors ${activeTab === 'profile' ? 'bg-surface text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-          >
-            Основное
-          </button>
-          <button
-            onClick={() => setActiveTab('security')}
-            className={`px-4 py-1.5 rounded-md text-xs font-medium transition-colors ${activeTab === 'security' ? 'bg-surface text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-          >
-            Безопасность
-          </button>
+        <div className="mb-6 overflow-x-auto">
+          <div className="flex w-max gap-1 rounded-lg bg-slate-100 p-1">
+            {(isStudent ? [
+              ['overview', 'Обзор'],
+              ['documents', 'Документы'],
+              ['analytics', 'Аналитика'],
+              ['settings', 'Настройки'],
+              ['security', 'Безопасность'],
+            ] : [
+              ['settings', 'Настройки'],
+              ['security', 'Безопасность'],
+            ]).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setActiveTab(key as ProfileTab)}
+                className={`whitespace-nowrap rounded-md px-4 py-1.5 text-xs font-medium transition-colors ${activeTab === key ? 'bg-surface text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
+
+        {activeTab === 'overview' && isStudent ? (
+          <div className="mb-6 rounded-xl border border-slate-200 bg-surface p-4">
+            <div className="flex items-center justify-between gap-4 text-sm">
+              <span className="font-semibold text-slate-700">Профиль заполнен</span>
+              <strong className="text-indigo-600">{profile.profile_completion}%</strong>
+            </div>
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
+              <div className="h-full rounded-full bg-indigo-600 transition-all" style={{ width: `${profile.profile_completion}%` }} />
+            </div>
+            {profile.profile_completion < 100 ? <p className="mt-2 text-xs text-slate-400">Добавьте телефон, фотографию и недостающие учебные данные, чтобы профиль был полным.</p> : null}
+          </div>
+        ) : null}
 
         {error && (
           <div className="mb-6 bg-red-50 border border-red-100 text-red-600 text-sm px-4 py-3 rounded-lg">{error}</div>
         )}
 
-        <div className="bg-surface rounded-xl border border-slate-200 overflow-hidden">
+        <div className={`bg-surface rounded-xl border border-slate-200 overflow-hidden ${activeTab === 'documents' || activeTab === 'analytics' ? 'hidden' : ''}`}>
           {/* ===== PROFILE TAB ===== */}
-          {activeTab === 'profile' && (
+          {(activeTab === 'overview' || activeTab === 'settings') && (
             <div className="p-5 sm:p-6">
               {/* Student cohort banner */}
-              {isStudent && (
+              {isStudent && activeTab === 'overview' && (
                 <div className="mb-6 p-4 bg-slate-50 border border-slate-200 rounded-xl flex justify-between items-center">
                   <div>
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Ваш учебный поток</p>
@@ -635,7 +689,7 @@ export function ProfilePage() {
               )}
 
               {/* GPA cards */}
-              {isStudent && (
+              {isStudent && activeTab === 'overview' && (
                 <div className="mb-6 grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="bg-surface border border-slate-200 rounded-xl p-4">
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Оценка модератора</p>
@@ -662,7 +716,7 @@ export function ProfilePage() {
               )}
 
               {/* Profile form */}
-              <form onSubmit={handleProfileSave} className="space-y-5">
+              {activeTab === 'settings' ? <form onSubmit={handleProfileSave} className="space-y-5">
                 <div className="flex items-center space-x-5 pb-4 border-b border-slate-100">
                   <div className="shrink-0 relative">
                     {avatarPreviewUrl ? (
@@ -730,19 +784,48 @@ export function ProfilePage() {
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:bg-surface focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all"
                   />
                 </div>
+                {isStudent ? (
+                  <fieldset className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <legend className="px-1 text-[11px] font-bold uppercase tracking-wider text-slate-500">Что видно в публичном профиле</legend>
+                    <p className="mb-3 text-xs text-slate-400">Имя остаётся публичным, остальные блоки можно скрыть отдельно.</p>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {[
+                        ['avatar', 'Фотография'],
+                        ['education', 'Уровень обучения и курс'],
+                        ['group', 'Учебная группа'],
+                        ['score', 'Баллы и позиция в рейтинге'],
+                        ['gpa', 'Средний балл и бонус'],
+                        ['analytics', 'Графики и направления'],
+                        ['achievements', 'Лента достижений'],
+                        ['resume', 'AI-сводка'],
+                      ].map(([key, label]) => (
+                        <label key={key} className="flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-slate-200 bg-surface px-3 py-2 text-sm text-slate-700">
+                          <span>{label}</span>
+                          <input
+                            type="checkbox"
+                            checked={publicVisibility[key] ?? true}
+                            onChange={(event) => setPublicVisibility((current) => ({ ...current, [key]: event.target.checked }))}
+                            className="theme-accent-checkbox h-4 w-4"
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
+                ) : null}
                 <div className="pt-2">
                   <button
                     type="submit"
                     disabled={isSavingProfile}
                     className="w-full sm:w-auto bg-indigo-600 text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors disabled:opacity-50"
                   >
-                    {isSavingProfile ? 'Сохраняем...' : 'Сохранить'}
+                    {isSavingProfile ? 'Сохраняем...' : hasUnsavedProfileChanges ? 'Сохранить изменения' : 'Сохранено'}
                   </button>
+                  {hasUnsavedProfileChanges ? <span className="ml-3 text-xs font-medium text-amber-600">Есть несохранённые изменения</span> : null}
                 </div>
-              </form>
+              </form> : null}
 
               {/* AI Resume block (students only) */}
-              {isStudent && (
+              {isStudent && activeTab === 'overview' && (
                 <div className="mt-8 pt-6 border-t border-slate-100">
                   <div className="bg-indigo-50/60 p-5 rounded-xl border border-indigo-100 shadow-sm">
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
@@ -774,6 +857,24 @@ export function ProfilePage() {
                         Резюме ещё не сформировано. Нажмите «Сгенерировать», чтобы создать сводку на основе подтверждённых достижений.
                       </div>
                     )}
+                    {profile.user.resume_generated_at ? (
+                      <p className="mt-2 text-[11px] text-slate-400">Последняя генерация: {new Date(profile.user.resume_generated_at).toLocaleString('ru-RU')}</p>
+                    ) : null}
+                    {profile.resume_versions?.length ? (
+                      <details className="mt-3 rounded-lg border border-slate-200 bg-surface p-3">
+                        <summary className="cursor-pointer text-xs font-semibold text-slate-600">История версий · {profile.resume_versions.length}</summary>
+                        <div className="mt-3 space-y-3">
+                          {profile.resume_versions.map((version, index) => (
+                            <details key={version.id} className="rounded-lg bg-slate-50 p-3">
+                              <summary className="cursor-pointer text-xs text-slate-600">
+                                {index === 0 ? 'Текущая' : `Версия ${profile.resume_versions.length - index}`} · {version.created_at ? new Date(version.created_at).toLocaleString('ru-RU') : 'дата неизвестна'} · {version.source_documents_count} док.
+                              </summary>
+                              <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-slate-600">{version.text}</p>
+                            </details>
+                          ))}
+                        </div>
+                      </details>
+                    ) : null}
                     {!canGenerate && generateReason ? (
                       <p className="mt-2 text-[11px] text-indigo-400">{generateReason}</p>
                     ) : null}
@@ -854,6 +955,7 @@ export function ProfilePage() {
                           )}
                         </button>
                       </div>
+                      <PasswordRequirements password={newPassword} />
                     </div>
                     <div>
                       <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1.5 tracking-wider">Подтвердите пароль</label>
@@ -875,6 +977,9 @@ export function ProfilePage() {
                         </button>
                       </div>
                     </div>
+                    <div className="rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs text-indigo-700">
+                      После сохранения все ранее открытые сессии будут завершены. Потребуется войти снова на каждом устройстве.
+                    </div>
                     <button
                       type="submit"
                       disabled={isResettingPassword}
@@ -891,8 +996,8 @@ export function ProfilePage() {
       </div>
 
       {/* ===== MY DOCS GRID ===== */}
-      {activeTab === 'profile' && docs.length > 0 && (
-        <div className="max-w-2xl mx-auto mt-6">
+      {activeTab === 'documents' && docs.length > 0 && (
+        <div className="max-w-5xl mx-auto mt-6">
           <div className="bg-surface rounded-xl border border-slate-200 p-5">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-sm font-semibold text-slate-700">Мои документы</h3>
@@ -969,9 +1074,15 @@ export function ProfilePage() {
         </div>
       )}
 
+      {activeTab === 'documents' && docs.length === 0 ? (
+        <div className="mx-auto mt-6 max-w-5xl rounded-xl border border-slate-200 bg-surface px-5 py-12 text-center text-sm text-slate-400">
+          У вас пока нет загруженных документов.
+        </div>
+      ) : null}
+
       {/* ===== DYNAMICS CHART (students only) ===== */}
-      {activeTab === 'profile' && isStudent && (
-        <div className="max-w-2xl mx-auto mt-6">
+      {activeTab === 'analytics' && isStudent && (
+        <div className="max-w-5xl mx-auto mt-6">
           <div className="bg-surface rounded-xl border border-slate-200 p-5">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-semibold text-slate-700">Динамика достижений</h3>
@@ -993,7 +1104,7 @@ export function ProfilePage() {
       )}
 
       {/* ===== RADAR CHART (students only) ===== */}
-      {activeTab === 'profile' && isStudent && profile.my_docs.some((d) => d.status === 'approved') && (() => {
+      {activeTab === 'analytics' && isStudent && profile.my_docs.some((d) => d.status === 'approved') && (() => {
         const pointsMap: Record<string, number> = {}
         for (const cat of RADAR_CATS) pointsMap[cat] = 0
         for (const doc of profile.my_docs) {
@@ -1003,7 +1114,7 @@ export function ProfilePage() {
         }
         const activeCats = RADAR_CATS.filter((c) => (pointsMap[c] ?? 0) > 0)
         return (
-          <div className="max-w-2xl mx-auto mt-6">
+          <div className="max-w-5xl mx-auto mt-6">
             <div className="bg-surface rounded-xl border border-slate-200 p-5">
               <h3 className="text-sm font-semibold text-slate-700 mb-4">Портрет достижений</h3>
               <div className="h-64 sm:h-72">

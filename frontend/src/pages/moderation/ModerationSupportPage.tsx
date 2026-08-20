@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 
 import { supportApi } from '@/api/support'
 import { ChipMultiSelect } from '@/components/staff/ChipMultiSelect'
@@ -93,6 +93,19 @@ function formatDate(dateStr?: string | null) {
   return `${day}.${month}.${year} ${hours}:${minutes}`
 }
 
+function getTicketAge(ticket: SupportTicket) {
+  const startedAt = new Date(ticket.assigned_at || ticket.created_at).getTime()
+  const hours = Math.max(0, Math.floor((Date.now() - startedAt) / 3_600_000))
+  if (hours < 1) return 'меньше часа'
+  if (hours < 24) return `${hours} ч.`
+  return `${Math.floor(hours / 24)} д. ${hours % 24} ч.`
+}
+
+function isTicketOverdue(ticket: SupportTicket) {
+  if (ticket.status === 'closed' || ticket.status === 'archived' || ticket.archived_at) return false
+  return Date.now() - new Date(ticket.assigned_at || ticket.created_at).getTime() > 48 * 3_600_000
+}
+
 function getSortOrderLabels(sortBy: string) {
   if (sortBy === 'subject') {
     return { asc: 'Тема: А-Я', desc: 'Тема: Я-А' }
@@ -103,20 +116,24 @@ function getSortOrderLabels(sortBy: string) {
   if (sortBy === 'id') {
     return { asc: 'ID: сначала меньшие', desc: 'ID: сначала большие' }
   }
+  if (sortBy === 'assigned_at') {
+    return { asc: 'Дольше всего в работе', desc: 'Недавно взятые' }
+  }
   return { asc: 'Сначала старые', desc: 'Сначала новые' }
 }
 
 export function ModerationSupportPage() {
   const { user: currentUser } = useAuth()
   const { pushToast } = useToast()
+  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const tab = normalizeSupportTab(searchParams.get('tab'))
   const [data, setData] = useState<SupportListResponse | null>(null)
   const [query, setQuery] = useState('')
   const [statusSel, setStatusSel] = useState<string[]>([])
   const [statusLogic, setStatusLogic] = useState<'or' | 'and'>('or')
-  const [sortBy, setSortBy] = useState(tab === 'chats' ? 'updated_at' : 'created_at')
-  const [sortOrder, setSortOrder] = useState('desc')
+  const [sortBy, setSortBy] = useState(tab === 'chats' ? 'assigned_at' : 'created_at')
+  const [sortOrder, setSortOrder] = useState(tab === 'chats' ? 'asc' : 'desc')
   const [page, setPage] = useState(1)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -127,8 +144,8 @@ export function ModerationSupportPage() {
     setStatusSel([])
     setStatusLogic('or')
     setPage(1)
-    setSortOrder('desc')
-    setSortBy(tab === 'chats' ? 'updated_at' : 'created_at')
+    setSortOrder(tab === 'chats' ? 'asc' : 'desc')
+    setSortBy(tab === 'chats' ? 'assigned_at' : 'created_at')
     setSuggestions([])
   }, [tab])
 
@@ -208,14 +225,16 @@ export function ModerationSupportPage() {
               ? await supportApi.getMyChats({
                   page: 1,
                   query: trimmed,
-                  status: status || undefined,
+                  statuses: statusSel.length ? statusSel : undefined,
+                  status_logic: statusSel.length > 1 && statusLogic === 'and' ? 'and' : undefined,
                   sort_by: sortBy,
                   sort_order: sortOrder,
                 })
               : await supportApi.getAllTickets({
                   page: 1,
                   query: trimmed,
-                  status: status || undefined,
+                  statuses: statusSel.length ? statusSel : undefined,
+                  status_logic: statusSel.length > 1 && statusLogic === 'and' ? 'and' : undefined,
                   sort_by: sortBy,
                   sort_order: sortOrder,
                 })
@@ -234,13 +253,13 @@ export function ModerationSupportPage() {
     return () => {
       window.clearTimeout(timeoutId)
     }
-  }, [query, sortBy, sortOrder, status, tab])
+  }, [query, sortBy, sortOrder, statusLogic, statusSel, tab])
 
   const handleTake = async (ticket: SupportTicket) => {
     try {
       await supportApi.takeTicket(ticket.id)
       pushToast({ title: 'Обращение взято в работу', tone: 'success' })
-      await load()
+      navigate(`/moderation/support/${ticket.id}?from=chats`)
     } catch (takeError) {
       setError(getErrorMessage(takeError, 'Не удалось взять обращение в работу.'))
     }
@@ -249,14 +268,15 @@ export function ModerationSupportPage() {
   const resetFilters = () => {
     setQuery('')
     setStatusSel([])
-    setSortOrder('desc')
-    setSortBy(tab === 'chats' ? 'updated_at' : 'created_at')
+    setSortOrder(tab === 'chats' ? 'asc' : 'desc')
+    setSortBy(tab === 'chats' ? 'assigned_at' : 'created_at')
     setSuggestions([])
     setPage(1)
   }
 
   const tickets = data?.tickets ?? []
   const total = data?.total ?? 0
+  const queueStats = data?.stats
   const sortOrderLabels = getSortOrderLabels(sortBy)
   const currentView = tab === 'new' ? 'incoming' : tab === 'chats' ? 'my' : 'all'
   const title =
@@ -271,6 +291,26 @@ export function ModerationSupportPage() {
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <StaffSectionHeader kind="support" currentView={currentView} title={title} description={description} />
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {[
+          { label: 'Активные', value: queueStats?.active ?? total, hint: 'В общей очереди' },
+          { label: 'Свободные', value: queueStats?.free ?? 0, hint: 'Можно взять сейчас' },
+          { label: 'Мои чаты', value: queueStats?.mine ?? 0, hint: 'Закреплены за вами' },
+          { label: 'Просроченные', value: queueStats?.overdue ?? 0, hint: 'Более 48 часов' },
+        ].map((item) => (
+          <div
+            key={item.label}
+            className={`rounded-2xl border bg-surface px-5 py-4 ${
+              item.label === 'Просроченные' && item.value > 0 ? 'border-red-300' : 'border-slate-200'
+            }`}
+          >
+            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{item.label}</div>
+            <div className="mt-1 text-2xl font-semibold text-slate-900">{item.value}</div>
+            <div className="mt-0.5 text-xs text-slate-500">{item.hint}</div>
+          </div>
+        ))}
+      </div>
 
       {error ? (
         <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">{error}</div>
@@ -308,6 +348,7 @@ export function ModerationSupportPage() {
                 </>
               ) : tab === 'chats' ? (
                 <>
+                  <option value="assigned_at">По времени в работе</option>
                   <option value="updated_at">По обновлению</option>
                   <option value="created_at">По дате создания</option>
                   <option value="subject">По теме</option>
@@ -315,6 +356,7 @@ export function ModerationSupportPage() {
               ) : (
                 <>
                   <option value="created_at">По дате создания</option>
+                  <option value="assigned_at">По времени в работе</option>
                   <option value="updated_at">По обновлению</option>
                   <option value="status">По статусу</option>
                   <option value="subject">По теме</option>
@@ -393,8 +435,13 @@ export function ModerationSupportPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
-                  {tickets.map((ticket, index) => (
-                    <tr key={ticket.id} className="transition-colors hover:bg-slate-50">
+                  {tickets.map((ticket, index) => {
+                    const overdue = isTicketOverdue(ticket)
+                    return (
+                    <tr
+                      key={ticket.id}
+                      className={`transition-colors hover:bg-slate-50 ${overdue ? 'bg-red-50/60' : ''}`}
+                    >
                       <td className="px-5 py-3 text-xs text-slate-400">{(page - 1) * MODERATION_SUPPORT_PAGE_SIZE + index + 1}</td>
                       <td className="px-5 py-3">
                         <Link
@@ -403,11 +450,23 @@ export function ModerationSupportPage() {
                         >
                           {ticket.subject}
                         </Link>
+                        {ticket.moderator_unread_count ? (
+                          <span className="ml-2 inline-flex min-w-5 items-center justify-center rounded-full bg-indigo-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                            {ticket.moderator_unread_count > 99 ? '99+' : ticket.moderator_unread_count}
+                          </span>
+                        ) : null}
+                        <div className={`mt-1 text-[10px] ${overdue ? 'font-semibold text-red-600' : 'text-slate-400'}`}>
+                          {ticket.assigned_at ? 'В работе' : 'Ожидает'}: {getTicketAge(ticket)}
+                          {overdue ? ' · просрочено' : ''}
+                        </div>
                       </td>
                       <td className="px-5 py-3 text-xs text-slate-600">
                         {ticket.user ? (
                           <>
-                            <Link to={`/users/${ticket.user.id}`} className="transition-colors hover:text-indigo-600">
+                            <Link
+                              to={`/users/${ticket.user.id}?return=${encodeURIComponent(`/moderation/support?tab=${tab}`)}`}
+                              className="transition-colors hover:text-indigo-600"
+                            >
                               {ticket.user.first_name} {ticket.user.last_name}
                             </Link>
                             <div className="text-[10px] text-slate-400">{ticket.user.email}</div>
@@ -472,7 +531,8 @@ export function ModerationSupportPage() {
                         )}
                       </td>
                     </tr>
-                  ))}
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
@@ -488,8 +548,8 @@ export function ModerationSupportPage() {
         <div className="rounded-xl border border-slate-200 bg-surface p-12 text-center">
           {tab === 'new' ? (
             <>
-              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-50">
-                <svg className="h-8 w-8 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-indigo-50">
+                <svg className="h-8 w-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
                 </svg>
               </div>

@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useState, type FormEvent, type MouseEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 
-import { leaderboardApi, type LeaderboardResponse, type LeaderboardRow } from '@/api/leaderboard'
+import {
+  leaderboardApi,
+  type CompletedSeason,
+  type CompletedSeasonRow,
+  type LeaderboardResponse,
+  type LeaderboardRow,
+} from '@/api/leaderboard'
 import { ChipMultiSelect } from '@/components/staff/ChipMultiSelect'
 import { SearchAutocompleteInput, type SearchSuggestionItem } from '@/components/staff/SearchAutocompleteInput'
 import { PaginationFooter } from '@/components/ui/PaginationFooter'
@@ -53,6 +59,33 @@ function buildUserLink(row: LeaderboardRow, isStaff: boolean) {
   return isStaff ? `/users/${row.user.id}?from=leaderboard` : `/students/${row.user.id}`
 }
 
+function RankHistory({ row }: { row: LeaderboardRow }) {
+  if (!row.previous_rank || row.previous_rank === row.rank) return null
+  const improved = row.previous_rank > row.rank
+  return (
+    <span className="text-[10px] text-slate-400" title={row.previous_season || undefined}>
+      #{row.previous_rank} → <span className={improved ? 'text-emerald-600 font-semibold' : 'text-slate-600 font-semibold'}>#{row.rank}</span>
+    </span>
+  )
+}
+
+function ScoreBreakdown({ row, align = 'center' }: { row: LeaderboardRow; align?: 'center' | 'right' }) {
+  if (!row.points_breakdown?.length) return null
+  return (
+    <details className={`relative mt-2 text-xs ${align === 'right' ? 'text-right' : 'text-center'}`}>
+      <summary className="cursor-pointer text-[11px] font-semibold text-slate-500 hover:text-indigo-600 select-none">Из чего баллы</summary>
+      <div className={`mt-2 rounded-lg border border-slate-200 bg-surface p-2 shadow-sm min-w-[190px] ${align === 'right' ? 'ml-auto' : 'mx-auto'}`}>
+        {row.points_breakdown.map((item) => (
+          <div key={item.label} className="flex items-center justify-between gap-4 py-1 text-slate-600">
+            <span className="text-left whitespace-normal">{item.label}</span>
+            <strong className="text-slate-800">{item.points}</strong>
+          </div>
+        ))}
+      </div>
+    </details>
+  )
+}
+
 export function LeaderboardPage() {
   const { user } = useAuth()
   const { pushToast } = useToast()
@@ -66,6 +99,11 @@ export function LeaderboardPage() {
   const [seasonModalOpen, setSeasonModalOpen] = useState(false)
   const [seasonName, setSeasonName] = useState('')
   const [isEndingSeason, setIsEndingSeason] = useState(false)
+  const [viewMode, setViewMode] = useState<'current' | 'history'>('current')
+  const [seasons, setSeasons] = useState<CompletedSeason[]>([])
+  const [selectedSeason, setSelectedSeason] = useState('')
+  const [seasonRows, setSeasonRows] = useState<CompletedSeasonRow[]>([])
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false)
 
   const isStaff = user?.role === 'MODERATOR' || user?.role === 'SUPER_ADMIN'
   const educationLevel = searchParams.get('education_level') ?? undefined
@@ -141,6 +179,40 @@ export function LeaderboardPage() {
 
     void load()
   }, [filters])
+
+  useEffect(() => {
+    const loadSeasons = async () => {
+      try {
+        const response = await leaderboardApi.getSeasons(filters)
+        setSeasons(response.data.seasons)
+        setSelectedSeason((current) => current && response.data.seasons.some((item) => item.name === current)
+          ? current
+          : response.data.seasons[0]?.name ?? '')
+      } catch (loadError) {
+        setError(getErrorMessage(loadError, 'Не удалось загрузить историю сезонов.'))
+      }
+    }
+    void loadSeasons()
+  }, [filters])
+
+  useEffect(() => {
+    if (viewMode !== 'history' || !selectedSeason) {
+      setSeasonRows([])
+      return
+    }
+    const loadSeason = async () => {
+      setIsHistoryLoading(true)
+      try {
+        const response = await leaderboardApi.getSeason(selectedSeason, filters)
+        setSeasonRows(response.data.leaderboard)
+      } catch (loadError) {
+        setError(getErrorMessage(loadError, 'Не удалось загрузить завершённый сезон.'))
+      } finally {
+        setIsHistoryLoading(false)
+      }
+    }
+    void loadSeason()
+  }, [filters, selectedSeason, viewMode])
 
   const filteredLeaderboard = useMemo(
     () => (data?.leaderboard ?? []).filter((row) => matchesLeaderboardRow(row, searchQuery)),
@@ -312,6 +384,61 @@ export function LeaderboardPage() {
     return `?${next.toString()}`
   })()
 
+  if (viewMode === 'history') {
+    return (
+      <div className="max-w-4xl mx-auto space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+          <div>
+            <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Завершённые сезоны</h2>
+            <p className="text-sm text-slate-500 mt-1">Зафиксированные позиции и баллы не меняются вместе с текущим рейтингом.</p>
+          </div>
+          <button type="button" onClick={() => setViewMode('current')} className="px-4 py-2.5 rounded-lg border border-slate-200 bg-surface text-sm font-semibold text-slate-600 hover:text-indigo-600">
+            Текущий сезон
+          </button>
+        </div>
+
+        {error ? <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">{error}</div> : null}
+
+        <div className="bg-surface rounded-xl border border-slate-200 p-4">
+          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5 tracking-wider">Сезон</label>
+          <select value={selectedSeason} onChange={(event) => setSelectedSeason(event.target.value)} className="w-full sm:max-w-md px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-700 outline-none">
+            {!seasons.length ? <option value="">Завершённых сезонов пока нет</option> : null}
+            {seasons.map((season) => (
+              <option key={season.name} value={season.name}>{season.name} · {season.participants} участников</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="bg-surface rounded-xl border border-slate-200 overflow-hidden">
+          {isHistoryLoading ? <div className="p-12 text-center text-sm text-slate-500">Загрузка сезона…</div> : null}
+          {!isHistoryLoading && seasonRows.length ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-400">
+                  <tr><th className="px-5 py-3">Место</th><th className="px-5 py-3">Студент</th><th className="px-5 py-3 text-right">Баллы</th></tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {seasonRows.map((row) => (
+                    <tr key={row.user.id} className={row.is_me ? 'bg-indigo-50/50' : ''}>
+                      <td className="px-5 py-3 font-semibold text-slate-500">#{row.rank}</td>
+                      <td className="px-5 py-3">
+                        <Link to={isStaff ? `/users/${row.user.id}?from=leaderboard` : `/students/${row.user.id}`} className="font-medium text-slate-800 hover:text-indigo-600">
+                          {row.user.first_name} {row.user.last_name}
+                        </Link>
+                      </td>
+                      <td className="px-5 py-3 text-right font-bold text-slate-800">{row.total_points} б.</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+          {!isHistoryLoading && !seasonRows.length ? <div className="p-12 text-center text-sm text-slate-500">Для выбранного сезона результатов нет.</div> : null}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="max-w-4xl mx-auto space-y-6" data-focus-me={searchParams.get('focus_me') === '1' ? 'true' : 'false'}>
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
@@ -357,6 +484,12 @@ export function LeaderboardPage() {
         </div>
       </div>
 
+      <div className="flex items-center gap-2">
+        <button type="button" className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-xs font-bold">Текущий сезон</button>
+        <button type="button" onClick={() => setViewMode('history')} className="px-4 py-2 rounded-lg border border-slate-200 bg-surface text-slate-600 hover:text-indigo-600 text-xs font-bold">Завершённые сезоны{seasons.length ? ` · ${seasons.length}` : ''}</button>
+      </div>
+      {isStaff ? <p className="-mt-4 text-xs text-slate-400">CSV выгружается с учётом выбранных ниже уровня обучения, курса, группы и направлений.</p> : null}
+
       {seasonModalOpen ? (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm">
           <div className="bg-surface rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
@@ -365,14 +498,20 @@ export function LeaderboardPage() {
                 <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /></svg>
               </div>
               <h3 className="text-xl font-bold text-slate-800">Завершить текущий сезон?</h3>
-              <p className="text-sm text-slate-500 mt-2">Рейтинг всех студентов будет зафиксирован в истории, а текущие баллы обнулятся. Это действие необратимо.</p>
+              <p className="text-sm text-slate-500 mt-2">Перед подтверждением проверьте последствия. Это действие необратимо.</p>
+              <ul className="mt-4 text-left text-sm text-slate-600 space-y-2 rounded-xl bg-slate-50 border border-slate-200 p-4">
+                <li>• Позиции и баллы {data?.leaderboard.length ?? 0} участников сохранятся в истории.</li>
+                <li>• Все одобренные документы перейдут в архив.</li>
+                <li>• Бонусы за средний балл будут сброшены.</li>
+                <li>• Новый текущий сезон начнётся с нулевого рейтинга.</li>
+              </ul>
             </div>
             <form onSubmit={handleEndSeason} className="px-6 pb-6">
               <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2 text-left">Название прошедшего сезона</label>
               <input value={seasonName} onChange={(event) => setSeasonName(event.target.value)} type="text" required placeholder="Например: Осенний семестр 2026" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:bg-surface focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all mb-4" />
               <div className="flex gap-3">
                 <button type="button" onClick={() => setSeasonModalOpen(false)} className="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200 transition-colors">Отмена</button>
-                <button type="submit" disabled={isEndingSeason} className="flex-1 py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-colors shadow-sm disabled:opacity-70">{isEndingSeason ? 'Сохраняем…' : 'Подтвердить'}</button>
+                <button type="submit" disabled={isEndingSeason || seasonName.trim().length < 3} className="flex-1 py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">{isEndingSeason ? 'Сохраняем…' : 'Подтвердить'}</button>
               </div>
             </form>
           </div>
@@ -460,6 +599,8 @@ export function LeaderboardPage() {
               <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 w-8 h-8 bg-surface border border-slate-200 text-slate-500 rounded-full flex items-center justify-center text-xs font-bold shadow-sm">2</div>
               <div className="mt-2 mb-3">{podium[1].user.avatar_path ? <img src={buildMediaUrl(podium[1].user.avatar_path)} className="w-16 h-16 rounded-full object-cover border border-slate-200" /> : <div className="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center text-xl font-medium text-slate-400 border border-slate-100">{podium[1].user.first_name.slice(0, 1)}</div>}</div>
               <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-center"><Link to={buildUserLink(podium[1], isStaff)} className="font-semibold text-slate-800 text-sm hover:text-indigo-600">{podium[1].user.first_name} {podium[1].user.last_name}</Link><div className="inline-flex bg-slate-50 text-slate-600 text-xs font-medium px-3 py-1 rounded-md border border-slate-100">{podium[1].total_points} баллов</div></div>
+              <RankHistory row={podium[1]} />
+              <ScoreBreakdown row={podium[1]} />
             </div>
           ) : <div className="hidden md:block"></div>}
 
@@ -467,6 +608,7 @@ export function LeaderboardPage() {
             <div className="absolute -top-4 left-1/2 transform -translate-x-1/2 w-8 h-8 text-white rounded-full flex items-center justify-center text-xs font-bold shadow-md" style={{ background: 'var(--theme-accent, #4f46e5)' }}>1</div>
             <div className="mt-2 mb-3">{podium[0]?.user.avatar_path ? <img src={buildMediaUrl(podium[0].user.avatar_path)} className="w-20 h-20 rounded-full object-cover border border-slate-200" /> : <div className="w-20 h-20 rounded-full bg-indigo-50 flex items-center justify-center text-2xl font-bold text-indigo-600 border border-indigo-100">{podium[0]?.user.first_name.slice(0, 1)}</div>}</div>
             <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-center"><Link to={buildUserLink(podium[0], isStaff)} className="font-bold text-slate-900 text-base hover:text-indigo-600">{podium[0]?.user.first_name} {podium[0]?.user.last_name}</Link><div className="inline-flex text-sm font-bold px-4 py-1.5 rounded-md" style={{ background: 'var(--theme-accent-soft, #eef2ff)', color: 'var(--theme-accent-strong, #4338ca)', border: '1px solid var(--theme-border-soft, #ebeff6)' }}>{podium[0]?.total_points ?? 0} баллов</div></div>
+            {podium[0] ? <><RankHistory row={podium[0]} /><ScoreBreakdown row={podium[0]} /></> : null}
           </div>
 
           {podium[2] ? (
@@ -474,6 +616,8 @@ export function LeaderboardPage() {
               <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 w-8 h-8 bg-surface border border-slate-200 text-slate-500 rounded-full flex items-center justify-center text-xs font-bold shadow-sm">3</div>
               <div className="mt-2 mb-3">{podium[2].user.avatar_path ? <img src={buildMediaUrl(podium[2].user.avatar_path)} className="w-16 h-16 rounded-full object-cover border border-slate-200" /> : <div className="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center text-xl font-medium text-slate-400 border border-slate-100">{podium[2].user.first_name.slice(0, 1)}</div>}</div>
               <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-center"><Link to={buildUserLink(podium[2], isStaff)} className="font-semibold text-slate-800 text-sm hover:text-indigo-600">{podium[2].user.first_name} {podium[2].user.last_name}</Link><div className="inline-flex bg-slate-50 text-slate-600 text-xs font-medium px-3 py-1 rounded-md border border-slate-100">{podium[2].total_points} баллов</div></div>
+              <RankHistory row={podium[2]} />
+              <ScoreBreakdown row={podium[2]} />
             </div>
           ) : <div className="hidden md:block"></div>}
         </div>
@@ -503,7 +647,11 @@ export function LeaderboardPage() {
                         </div>
                       </div>
                     </td>
-                    <td className="px-5 py-3 text-right"><span className={`text-sm font-bold ${row.is_me ? 'text-indigo-600' : 'text-slate-700'}`}>{row.total_points}</span><span className="text-xs text-slate-400 ml-1">б.</span></td>
+                    <td className="px-5 py-3 text-right align-top">
+                      <span className={`text-sm font-bold ${row.is_me ? 'text-indigo-600' : 'text-slate-700'}`}>{row.total_points}</span><span className="text-xs text-slate-400 ml-1">б.</span>
+                      <div><RankHistory row={row} /></div>
+                      <ScoreBreakdown row={row} align="right" />
+                    </td>
                   </tr>
                 ))}
               </tbody>

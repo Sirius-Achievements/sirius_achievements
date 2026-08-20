@@ -16,6 +16,8 @@ export interface DocumentsParams {
   level_logic?: string
   result_logic?: string
   sort_by?: string
+  date_from?: string
+  date_to?: string
 }
 
 export interface DocumentsResponse {
@@ -47,6 +49,6 @@ export const documentsApi = {
   },
 
   delete(id: number) {
-    return client.delete<{ success: boolean }>(`/documents/${id}`)
+    return client.delete<{ success: boolean; action?: 'archived' | 'deleted' }>(`/documents/${id}`)
   },
 }

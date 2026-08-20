@@ -21,6 +21,16 @@ from .serializers import serialize_achievement, serialize_user_public
 router = APIRouter(prefix='/api/v1/public', tags=['api.v1.public'])
 
 _STAFF_ROLES = (UserRole.MODERATOR, UserRole.SUPER_ADMIN)
+_VISIBILITY_DEFAULTS = {
+    'avatar': True,
+    'education': True,
+    'group': True,
+    'gpa': True,
+    'analytics': True,
+    'achievements': True,
+    'resume': True,
+    'score': True,
+}
 
 async def _enforce_public_rate_limit(request: Request, bucket: str) -> None:
     client_ip = request.client.host if request.client else 'unknown'
@@ -159,8 +169,9 @@ async def public_student_profile(
         category_breakdown[category] = category_breakdown.get(category, 0) + 1
 
     can_view_docs = _can_view_documents(viewer, student_id)
+    visibility = {**_VISIBILITY_DEFAULTS, **(student.public_visibility or {})}
     achievements_payload = []
-    for achievement in achievements:
+    for achievement in achievements if visibility['achievements'] else []:
         item = serialize_achievement(achievement)
         item['preview_url'] = (
             f'/api/v1/public/students/{student_id}/documents/{achievement.id}/preview'
@@ -168,26 +179,39 @@ async def public_student_profile(
         )
         achievements_payload.append(item)
 
+    student_payload = serialize_user_public(student)
+    if not visibility['avatar']:
+        student_payload['avatar_path'] = None
+    if not visibility['education']:
+        student_payload['education_level'] = None
+        student_payload['course'] = None
+    if not visibility['group']:
+        student_payload['study_group'] = None
+    if not visibility['gpa']:
+        student_payload['session_gpa'] = None
+    student_payload['resume_text'] = student.resume_text if visibility['resume'] else None
+
     return {
-        'student': serialize_user_public(student),
+        'student': student_payload,
         'achievements': achievements_payload,
-        'total_points': total_points,
-        'total_docs': len(achievements),
-        'rank': rank,
+        'total_points': total_points if visibility['score'] else None,
+        'total_docs': len(achievements) if visibility['achievements'] else None,
+        'rank': rank if visibility['score'] else None,
         'global_total': global_total,
-        'group_rank': group_rank,
+        'group_rank': group_rank if visibility['score'] else None,
         'group_total': group_total,
         'group_name': student.study_group,
-        'gpa_bonus': gpa_bonus,
-        'chart_labels': chart_labels,
-        'chart_points': chart_points,
-        'chart_uploads': chart_uploads,
-        'chart_cumulative': chart_cumulative,
-        'has_chart_data': bool(chart_labels),
+        'gpa_bonus': gpa_bonus if visibility['gpa'] else 0,
+        'chart_labels': chart_labels if visibility['analytics'] else [],
+        'chart_points': chart_points if visibility['analytics'] else [],
+        'chart_uploads': chart_uploads if visibility['analytics'] else [],
+        'chart_cumulative': chart_cumulative if visibility['analytics'] else [],
+        'has_chart_data': bool(chart_labels) and visibility['analytics'],
         'category_breakdown': [
             {'category': category, 'count': count}
             for category, count in sorted(category_breakdown.items(), key=lambda item: (-item[1], item[0]))
-        ],
+        ] if visibility['analytics'] else [],
+        'public_visibility': visibility,
         'public_url': f'/sirius.achievements/app/students/{student_id}',
     }
 

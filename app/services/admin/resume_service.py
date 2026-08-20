@@ -14,6 +14,7 @@ from app.config import settings
 from app.models.achievement import Achievement
 from app.models.enums import AchievementLevel, AchievementStatus
 from app.models.user import Users
+from app.models.resume_version import ResumeVersion
 from app.utils import storage
 from app.utils.media_paths import resolve_static_path
 
@@ -78,6 +79,10 @@ async def _ocr_via_service(file_bytes: bytes, filename: str) -> str:
 class ResumeService:
     def __init__(self, db: AsyncSession):
         self.db = db
+
+    def _is_external_ai_configured(self) -> bool:
+        """Compatibility hook used by tests and deployments that disable local AI."""
+        return bool(settings.RESUME_LOCAL_AI_ENABLED)
 
     async def can_generate(self, user_id: int) -> dict:
         user = await self.db.get(Users, user_id)
@@ -161,7 +166,7 @@ class ResumeService:
                 docs_data.append(document_data)
 
             resume_result: str | None = None
-            if settings.RESUME_LOCAL_AI_ENABLED:
+            if self._is_external_ai_configured():
                 combined_text = self._build_combined_text(student_meta, docs_data)
                 if combined_text:
                     resume_result = await self._call_local_llm(combined_text, student_meta["full_name"])
@@ -179,6 +184,15 @@ class ResumeService:
 
             user.resume_text = resume_result
             user.resume_generated_at = datetime.now(timezone.utc)
+            add_to_session = getattr(self.db, 'add', None)
+            if callable(add_to_session):
+                add_to_session(
+                    ResumeVersion(
+                        user_id=user.id,
+                        text=resume_result,
+                        source_documents_count=len(achievements),
+                    )
+                )
             await self.db.commit()
             await self.db.refresh(user)
 

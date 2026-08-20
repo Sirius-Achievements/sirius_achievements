@@ -20,8 +20,8 @@ export interface PublicStudent {
 export interface PublicStudentResponse {
   student: PublicStudent
   achievements: PublicStudentAchievement[]
-  total_points: number
-  total_docs: number
+  total_points: number | null
+  total_docs: number | null
   rank: number | null
   global_total?: number
   group_rank?: number | null
@@ -38,6 +38,7 @@ export interface PublicStudentResponse {
     count: number
   }>
   public_url: string
+  public_visibility?: Record<string, boolean>
 }
 
 export const publicApi = {

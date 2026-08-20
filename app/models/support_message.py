@@ -11,6 +11,7 @@ class SupportMessage(Base):
     id = Column(Integer, primary_key=True, index=True)
     ticket_id = Column(Integer, ForeignKey("support_tickets.id", ondelete="CASCADE"), nullable=False, index=True)
     sender_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    reply_to_id = Column(Integer, ForeignKey("support_messages.id", ondelete="SET NULL"), nullable=True)
 
     text = Column(Text, nullable=True)
     file_path = Column(String, nullable=True)
@@ -20,3 +21,4 @@ class SupportMessage(Base):
 
     ticket = relationship("SupportTicket", back_populates="messages")
     sender = relationship("Users")
+    reply_to = relationship("SupportMessage", remote_side=[id])

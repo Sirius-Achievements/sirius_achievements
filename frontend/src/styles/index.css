@@ -145,6 +145,12 @@
   }
 }
 
+@layer components {
+  .theme-accent-checkbox {
+    accent-color: var(--theme-accent);
+  }
+}
+
 /* Auth pages — dark mode overrides for Tailwind hardcoded colors */
 [data-theme='dark'] .theme-auth-card {
   background:

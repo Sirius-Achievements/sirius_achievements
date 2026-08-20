@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum, Text, ForeignKey, Index
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum, Text, ForeignKey, Index, JSON
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.infrastructure.database import Base
@@ -20,6 +20,8 @@ class Users(Base):
     hashed_password = Column(String, nullable=False)
     phone_number = Column(String, nullable=True)
     avatar_path = Column(String, nullable=True)
+    public_visibility = Column(JSON, nullable=True)
+    registration_rejection_reason = Column(Text, nullable=True)
 
     role = Column(Enum(UserRole, name="user_role"), default=UserRole.GUEST)
     status = Column(Enum(UserStatus, name="userstatus"), default=UserStatus.PENDING)

@@ -43,6 +43,8 @@ SUPPORT_SIGNATURES = {
     "jpg": SIGNATURES["jpg"],
     "png": SIGNATURES["png"],
     "webp": SIGNATURES["webp"],
+    "doc": SIGNATURES["doc"],
+    "docx": SIGNATURES["docx"],
 }
 
 

@@ -2,7 +2,14 @@ import { useMemo, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 
 import { authApi } from '@/api/auth'
-import { getAuthFlowEmail, getAuthFlowRemainingSeconds, hasStoredAuthFlow, saveAuthFlow } from '@/utils/authFlow'
+import {
+  clearAuthFlow,
+  getAuthFlowEmail,
+  getAuthFlowRemainingSeconds,
+  hasStoredAuthFlow,
+  maskEmail,
+  saveAuthFlow,
+} from '@/utils/authFlow'
 import { useToast } from '@/hooks/useToast'
 import { getErrorMessage } from '@/utils/http'
 
@@ -23,6 +30,17 @@ export function ForgotPasswordPage() {
   const [email, setEmail] = useState(initialEmail)
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [restartRequested, setRestartRequested] = useState(false)
+  const [restartConfirmed, setRestartConfirmed] = useState(false)
+  const hasActiveFlow = !restartConfirmed && (hasPendingResetFlow || hasVerifiedResetFlow)
+
+  const handleRestart = () => {
+    clearAuthFlow('reset_password')
+    clearAuthFlow('reset_password_verified')
+    setRestartConfirmed(true)
+    setRestartRequested(false)
+    setError(null)
+  }
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -61,12 +79,12 @@ export function ForgotPasswordPage() {
         </p>
       </div>
 
-      {hasVerifiedResetFlow ? (
+      {!restartConfirmed && hasVerifiedResetFlow ? (
         <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 text-left">
           <p className="text-sm font-semibold text-slate-800">Код уже подтверждён</p>
           <p className="mt-1 text-sm text-slate-600">
             {pendingResetEmail
-              ? `Для ${pendingResetEmail} можно сразу задать новый пароль.`
+              ? `Для ${maskEmail(pendingResetEmail)} можно сразу задать новый пароль.`
               : 'Можно сразу перейти к установке нового пароля.'}
           </p>
           <button
@@ -79,11 +97,11 @@ export function ForgotPasswordPage() {
         </div>
       ) : null}
 
-      {!hasVerifiedResetFlow && hasPendingResetFlow ? (
+      {!restartConfirmed && !hasVerifiedResetFlow && hasPendingResetFlow ? (
         <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 text-left">
           <p className="text-sm font-semibold text-slate-800">Код для сброса уже отправлен</p>
           <p className="mt-1 text-sm text-slate-600">
-            {pendingResetEmail ? `Код отправлен на ${pendingResetEmail}. ` : 'Код для сброса уже отправлен. '}
+            {pendingResetEmail ? `Код отправлен на ${maskEmail(pendingResetEmail)}. ` : 'Код для сброса уже отправлен. '}
             {pendingResetTimeLeft > 0
               ? `Повторная отправка будет доступна через ${pendingResetTimeLeft} сек.`
               : 'Можно сразу перейти к вводу кода.'}
@@ -98,13 +116,42 @@ export function ForgotPasswordPage() {
         </div>
       ) : null}
 
+      {hasActiveFlow ? (
+        <div className="mb-5 text-center">
+          {!restartRequested ? (
+            <button
+              type="button"
+              onClick={() => setRestartRequested(true)}
+              className="text-xs text-slate-500 underline decoration-slate-300 underline-offset-4 hover:text-slate-700"
+            >
+              Начать восстановление заново
+            </button>
+          ) : (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left">
+              <p className="text-sm font-semibold text-slate-800">Отменить текущий процесс?</p>
+              <p className="mt-1 text-xs leading-relaxed text-slate-600">
+                Текущий код перестанет использоваться в интерфейсе. Новый код потребуется запросить повторно.
+              </p>
+              <div className="mt-3 flex gap-2">
+                <button type="button" onClick={handleRestart} className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-medium text-white">
+                  Да, начать заново
+                </button>
+                <button type="button" onClick={() => setRestartRequested(false)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-600">
+                  Отмена
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : null}
+
       {error ? (
         <div className="mb-6 bg-red-50 border border-red-100 text-red-600 text-sm px-4 py-3 rounded-lg text-center">
           {error}
         </div>
       ) : null}
 
-      <form onSubmit={handleSubmit} className="space-y-5">
+      {!hasActiveFlow ? <form onSubmit={handleSubmit} className="space-y-5">
         <div>
           <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
             Email адрес
@@ -125,7 +172,7 @@ export function ForgotPasswordPage() {
         >
           {isSubmitting ? 'Отправляем...' : 'Отправить код'}
         </button>
-      </form>
+      </form> : null}
 
       <div className="mt-6 text-center text-sm text-slate-500">
         <Link

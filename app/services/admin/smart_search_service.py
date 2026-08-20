@@ -19,6 +19,11 @@ MAX_CANDIDATES = 140
 CHUNK_SIZE = 10
 MAX_ACHIEVEMENTS_PER_STUDENT = 4
 
+_FALLBACK_STOP_WORDS = {
+    'который', 'которые', 'студент', 'студенты', 'найти', 'покажи', 'нужны',
+    'среди', 'имеет', 'имеют', 'очень', 'этого', 'этой', 'этим', 'чтобы',
+}
+
 _SYSTEM_PROMPT = (
     "Ты — ассистент поиска по базе студентов. Тебе дан список профилей студентов "
     "и критерии поиска на естественном языке.\n\n"
@@ -134,9 +139,61 @@ def _parse_ids(content: str, valid_ids: set[int]) -> list[int]:
     return _parse_line_verdicts(content, valid_ids)
 
 
+def _fallback_tokens(value: str) -> set[str]:
+    """Небольшой локальный индекс для разработки без запущенной vLLM.
+
+    Сравниваем начала слов, чтобы русские падежи вроде «олимпиада/олимпиад»
+    находились одинаково. Это не подменяет LLM, но сохраняет полезный поиск.
+    """
+    tokens = set()
+    for word in re.findall(r"[a-zа-яё0-9]+", (value or '').casefold()):
+        if len(word) < 4 or word in _FALLBACK_STOP_WORDS:
+            continue
+        tokens.add(word[:6])
+    return tokens
+
+
+def _fallback_haystack(user: Users) -> str:
+    parts = [
+        user.first_name,
+        user.last_name,
+        user.study_group,
+        str(user.course or ''),
+        _enum_value(user.education_level),
+        str(user.session_gpa or ''),
+    ]
+    for achievement in user.achievements or []:
+        if achievement.status != AchievementStatus.APPROVED:
+            continue
+        parts.extend([
+            achievement.title,
+            achievement.description,
+            _enum_value(achievement.category),
+            _enum_value(achievement.level),
+            _enum_value(achievement.result),
+        ])
+    return ' '.join(str(part) for part in parts if part)
+
+
+def _fallback_search(users: list[Users], description: str) -> list[int]:
+    query_tokens = _fallback_tokens(description)
+    if not query_tokens:
+        return []
+
+    required_matches = min(2, len(query_tokens))
+    ranked: list[tuple[int, int]] = []
+    for user in users:
+        matches = len(query_tokens & _fallback_tokens(_fallback_haystack(user)))
+        if matches >= required_matches:
+            ranked.append((matches, user.id))
+    ranked.sort(key=lambda item: (-item[0], item[1]))
+    return [user_id for _, user_id in ranked]
+
+
 class SmartSearchService:
     def __init__(self, db: AsyncSession):
         self.db = db
+        self.used_fallback = False
 
     async def search(self, stmt: Select, description: str) -> list[int] | None:
         """stmt — уже отфильтрованный select(Users) (зона модератора, роль/статус/курс).
@@ -150,7 +207,9 @@ class SmartSearchService:
         chunk_results = await asyncio.gather(*(self._search_chunk(chunk, description) for chunk in chunks))
 
         if all(result is None for result in chunk_results):
-            return None
+            self.used_fallback = True
+            log.warning("local_llm_unavailable_using_profile_search_fallback")
+            return _fallback_search(list(users), description)
 
         matched_ids: list[int] = []
         seen: set[int] = set()

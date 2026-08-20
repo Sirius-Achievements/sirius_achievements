@@ -250,7 +250,7 @@ async def delete_achievement(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Достижение не найдено.')
 
     try:
-        await service.delete(achievement_id, current_user.id, current_user.role)
-        return {'success': True}
+        action = await service.delete(achievement_id, current_user.id, current_user.role)
+        return {'success': True, 'action': action}
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Удаление документа недоступно.') from exc

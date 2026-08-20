@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 
 import { moderationApi } from '@/api/moderation'
 import { SearchAutocompleteInput, type SearchSuggestionItem } from '@/components/staff/SearchAutocompleteInput'
@@ -45,7 +45,18 @@ function assignmentRank(user: User, currentUserId?: number) {
   return 2
 }
 
+function applicationAge(createdAt: string) {
+  const hours = Math.max(0, Math.floor((Date.now() - new Date(createdAt).getTime()) / 3_600_000))
+  if (hours < 24) return `${hours} ч.`
+  return `${Math.floor(hours / 24)} дн.`
+}
+
+function isOverdue(createdAt: string) {
+  return Date.now() - new Date(createdAt).getTime() > 48 * 3_600_000
+}
+
 export function ModerationUsersPage() {
+  const navigate = useNavigate()
   const { user: currentUser } = useAuth()
   const { pushToast } = useToast()
   const [users, setUsers] = useState<User[]>([])
@@ -169,11 +180,15 @@ export function ModerationUsersPage() {
     try {
       await moderationApi.takeUser(user.id)
       pushToast({ title: 'Пользователь взят в работу', tone: 'success' })
-      await load()
+      navigate(`/users/${user.id}?from=moderation`)
     } catch (takeError) {
       setError(getErrorMessage(takeError, 'Не удалось взять пользователя в работу.'))
     }
   }
+
+  const overdueCount = users.filter((user) => isOverdue(user.created_at)).length
+  const freeCount = users.filter((user) => !user.reviewed_by_id).length
+  const mineCount = users.filter((user) => user.reviewed_by_id === currentUser?.id).length
 
   const resetFilters = () => {
     setQuery('')
@@ -191,6 +206,19 @@ export function ModerationUsersPage() {
         title="Новые пользователи"
         description={`${totalCount} ожидают проверки`}
       />
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        {[
+          ['Свободно', freeCount],
+          ['Закреплено за вами', mineCount],
+          ['Просрочено более 48 ч.', overdueCount],
+        ].map(([label, value]) => (
+          <div key={label} className={`rounded-xl border p-4 ${label.toString().startsWith('Просрочено') && Number(value) ? 'border-red-200 bg-red-50' : 'border-slate-200 bg-surface'}`}>
+            <div className="text-xs text-slate-500">{label}</div>
+            <div className="mt-1 text-2xl font-semibold text-slate-900">{value}</div>
+          </div>
+        ))}
+      </div>
 
       {error ? (
         <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">{error}</div>
@@ -277,6 +305,7 @@ export function ModerationUsersPage() {
                   <th className="px-5 py-3 font-bold">Пользователь</th>
                   <th className="px-5 py-3 font-bold">Роль / обучение</th>
                   <th className="px-5 py-3 font-bold">Регистрация</th>
+                  <th className="px-5 py-3 font-bold">Проверка</th>
                   <th className="px-5 py-3 font-bold">Статус</th>
                   <th className="px-5 py-3 font-bold">Модератор</th>
                   <th className="px-5 py-3 text-right font-bold">Действие</th>
@@ -284,7 +313,7 @@ export function ModerationUsersPage() {
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {paginatedUsers.map((user, index) => (
-                  <tr key={user.id} className="transition-colors hover:bg-slate-50">
+                  <tr key={user.id} className={`transition-colors hover:bg-slate-50 ${isOverdue(user.created_at) ? 'bg-red-50/50' : ''}`}>
                     <td className="px-5 py-3 text-xs text-slate-400">{(page - 1) * MODERATION_USERS_PAGE_SIZE + index + 1}</td>
                     <td className="px-5 py-3">
                       <div className="flex items-center gap-3">
@@ -326,6 +355,17 @@ export function ModerationUsersPage() {
                     </td>
                     <td className="px-5 py-3 text-xs text-slate-500">
                       {user.created_at ? new Date(user.created_at).toLocaleDateString('ru-RU') : '—'}
+                      <div className={`mt-1 text-[10px] font-medium ${isOverdue(user.created_at) ? 'text-red-600' : 'text-slate-400'}`}>
+                        В очереди {applicationAge(user.created_at)}
+                      </div>
+                    </td>
+                    <td className="px-5 py-3 text-[10px] text-slate-500">
+                      <div className="space-y-1">
+                        <div>✓ Email подтверждён</div>
+                        <div className={user.course ? '' : 'text-red-600'}>{user.course ? '✓' : '!' } Курс {user.course ? 'существует' : 'не указан'}</div>
+                        <div className={user.study_group ? '' : 'text-red-600'}>{user.study_group ? '✓' : '!'} Группа {user.study_group ? 'существует' : 'не указана'}</div>
+                        <div>✓ Дубликатов email нет</div>
+                      </div>
                     </td>
                     <td className="px-5 py-3">
                       {!user.reviewed_by_id ? (
@@ -365,7 +405,7 @@ export function ModerationUsersPage() {
                             onClick={() => void handleTake(user)}
                             className="text-xs font-bold text-indigo-600 hover:underline"
                           >
-                            Взять в работу
+                            Взять и проверить
                           </button>
                         </div>
                       ) : user.reviewed_by_id === currentUser?.id ? (

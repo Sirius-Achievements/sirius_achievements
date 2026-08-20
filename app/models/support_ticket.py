@@ -24,7 +24,11 @@ class SupportTicket(Base):
     moderator_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     subject = Column(String(255), nullable=False)
+    category = Column(String(50), nullable=False, default='technical')
+    resolution = Column(String(50), nullable=True)
     status = Column(support_ticket_status_enum, default=SupportTicketStatus.OPEN)
+    student_unread_count = Column(Integer, nullable=False, default=0)
+    moderator_unread_count = Column(Integer, nullable=False, default=0)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

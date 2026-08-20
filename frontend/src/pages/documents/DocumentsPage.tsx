@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 
 import { documentsApi } from '@/api/documents'
 import { moderationApi } from '@/api/moderation'
 import { ChipMultiSelect } from '@/components/staff/ChipMultiSelect'
 import { SearchAutocompleteInput, type SearchSuggestionItem } from '@/components/staff/SearchAutocompleteInput'
 import { StaffSectionHeader } from '@/components/staff/StaffSectionHeader'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { Pagination } from '@/components/ui/Pagination'
 import { useAuth } from '@/hooks/useAuth'
@@ -40,24 +41,29 @@ function statusClass(status: string, moderatorId?: number, currentUserId?: numbe
 export function DocumentsPage() {
   const { user: currentUser } = useAuth()
   const { pushToast } = useToast()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [items, setItems] = useState<Achievement[]>([])
   const [statuses, setStatuses] = useState<string[]>([])
   const [categories, setCategories] = useState<string[]>([])
   const [levels, setLevels] = useState<string[]>([])
   const [query, setQuery] = useState('')
-  const [statusSel, setStatusSel] = useState<string[]>([])
-  const [categorySel, setCategorySel] = useState<string[]>([])
+  const [statusSel, setStatusSel] = useState<string[]>(() => searchParams.get('status') ? [searchParams.get('status')!] : [])
+  const [categorySel, setCategorySel] = useState<string[]>(() => searchParams.get('category') ? [searchParams.get('category')!] : [])
   const [levelSel, setLevelSel] = useState<string[]>([])
   const [resultSel, setResultSel] = useState<string[]>([])
   const [categoryLogic, setCategoryLogic] = useState<'or' | 'and'>('or')
   const [levelLogic, setLevelLogic] = useState<'or' | 'and'>('or')
   const [resultLogic, setResultLogic] = useState<'or' | 'and'>('or')
   const [sortBy, setSortBy] = useState('newest')
+  const [dateFrom, setDateFrom] = useState(() => searchParams.get('date_from') ?? '')
+  const [dateTo, setDateTo] = useState(() => searchParams.get('date_to') ?? '')
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [suggestions, setSuggestions] = useState<SearchSuggestionItem[]>([])
+  const [deleteTarget, setDeleteTarget] = useState<Achievement | null>(null)
+  const [deleteBusy, setDeleteBusy] = useState(false)
 
   const filters = useMemo(
     () => ({
@@ -71,8 +77,10 @@ export function DocumentsPage() {
       level_logic: levelSel.length > 1 && levelLogic === 'and' ? 'and' : undefined,
       result_logic: resultSel.length > 1 && resultLogic === 'and' ? 'and' : undefined,
       sort_by: sortBy,
+      date_from: dateFrom || undefined,
+      date_to: dateTo || undefined,
     }),
-    [categorySel, categoryLogic, levelSel, levelLogic, page, query, resultSel, resultLogic, sortBy, statusSel],
+    [categorySel, categoryLogic, dateFrom, dateTo, levelSel, levelLogic, page, query, resultSel, resultLogic, sortBy, statusSel],
   )
 
   const toggleIn = (setter: Dispatch<SetStateAction<string[]>>) => (value: string) =>
@@ -102,7 +110,17 @@ export function DocumentsPage() {
 
   useEffect(() => {
     setPage(1)
-  }, [query, statusSel, categorySel, levelSel, resultSel, sortBy])
+  }, [query, statusSel, categorySel, levelSel, resultSel, sortBy, dateFrom, dateTo])
+
+  useEffect(() => {
+    const next = new URLSearchParams()
+    if (query) next.set('query', query)
+    if (statusSel.length === 1) next.set('status', statusSel[0])
+    if (categorySel.length === 1) next.set('category', categorySel[0])
+    if (dateFrom) next.set('date_from', dateFrom)
+    if (dateTo) next.set('date_to', dateTo)
+    setSearchParams(next, { replace: true })
+  }, [categorySel, dateFrom, dateTo, query, setSearchParams, statusSel])
 
   useEffect(() => {
     const trimmed = query.trim()
@@ -138,6 +156,8 @@ export function DocumentsPage() {
     setLevelSel([])
     setResultSel([])
     setSortBy('newest')
+    setDateFrom('')
+    setDateTo('')
     setSuggestions([])
     setPage(1)
   }
@@ -195,17 +215,20 @@ export function DocumentsPage() {
     }
   }
 
-  const handleDelete = async (item: Achievement) => {
-    if (!window.confirm(`Удалить документ «${item.title}»?`)) {
-      return
-    }
+  const handleDelete = (item: Achievement) => setDeleteTarget(item)
 
+  const confirmDelete = async () => {
+    if (!deleteTarget) return
+    setDeleteBusy(true)
     try {
-      await documentsApi.delete(item.id)
+      await documentsApi.delete(deleteTarget.id)
       pushToast({ title: 'Документ удалён', tone: 'success' })
+      setDeleteTarget(null)
       await loadDocuments()
     } catch (deleteError) {
       setError(getErrorMessage(deleteError, 'Не удалось удалить документ.'))
+    } finally {
+      setDeleteBusy(false)
     }
   }
 
@@ -251,6 +274,15 @@ export function DocumentsPage() {
               <option value="title">По названию</option>
             </select>
           </div>
+
+          <label className="w-full sm:w-[160px]">
+            <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Дата с</span>
+            <input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} className="h-[38px] w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 outline-none focus:border-indigo-600" />
+          </label>
+          <label className="w-full sm:w-[160px]">
+            <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Дата по</span>
+            <input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} className="h-[38px] w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 outline-none focus:border-indigo-600" />
+          </label>
 
           <div className="w-full sm:basis-full">
             <ChipMultiSelect
@@ -492,6 +524,16 @@ export function DocumentsPage() {
           </div>
         )}
       </div>
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="Удалить документ?"
+        message={deleteTarget ? <>Документ <strong>«{deleteTarget.title}»</strong> будет удалён. Если он уже участвовал в рейтинге, сервер перенесёт его в архив.</> : null}
+        confirmLabel="Удалить"
+        tone="danger"
+        busy={deleteBusy}
+        onConfirm={() => void confirmDelete()}
+        onCancel={() => { if (!deleteBusy) setDeleteTarget(null) }}
+      />
     </div>
   )
 }

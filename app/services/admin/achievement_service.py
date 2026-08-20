@@ -8,6 +8,7 @@ from app.repositories.admin.achievement_repository import AchievementRepository
 from app.services.admin.base_crud_service import BaseCrudService
 from app.utils.file_validator import DOC_SIGNATURES, FileValidator
 from app.utils import storage
+from app.models.enums import AchievementStatus
 
 logger = structlog.get_logger()
 
@@ -53,6 +54,10 @@ class AchievementService(BaseCrudService):
         if not is_owner and not is_super_admin and not (is_moderator and is_same_zone):
             raise ValueError("У вас нет прав на удаление этого файла")
 
+        if item.status == AchievementStatus.APPROVED or int(item.points or 0) > 0:
+            await self.repo.update(id, {'status': AchievementStatus.ARCHIVED})
+            return 'archived'
+
         if item.file_path:
             if storage.is_minio_path(item.file_path):
                 await storage.delete(storage.extract_key(item.file_path))
@@ -65,3 +70,4 @@ class AchievementService(BaseCrudService):
                         logger.warning("Failed to delete file", path=full_path)
 
         await self.repo.delete(id)
+        return 'deleted'

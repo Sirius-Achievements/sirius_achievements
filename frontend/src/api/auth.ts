@@ -73,6 +73,10 @@ export const authApi = {
     return client.post<FlowResponse>('/auth/resend-verify-email', { flow_token: flowToken })
   },
 
+  restartVerifyEmail(email: string) {
+    return client.post<FlowResponse>('/auth/restart-verify-email', { email })
+  },
+
   me() {
     return client.get<{ user: User }>('/auth/me')
   },

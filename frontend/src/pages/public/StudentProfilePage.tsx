@@ -1,4 +1,4 @@
-import { Component, useEffect, useRef, useState, type ReactNode } from 'react'
+import { Component, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import Chart from 'chart.js/auto'
 
@@ -35,6 +35,22 @@ function isPdf(url?: string | null) {
 }
 
 const RADAR_CATS = ['Спорт', 'Наука', 'Искусство', 'Волонтёрство', 'Хакатон', 'Патриотизм', 'Проекты', 'Другое']
+
+type AnalyticsPeriod = 'all' | 'year' | 'season'
+
+function periodStart(period: AnalyticsPeriod) {
+  if (period === 'all') return null
+  const now = new Date()
+  if (period === 'year') return new Date(now.getFullYear() - 1, now.getMonth(), 1)
+  if (now.getMonth() >= 8) return new Date(now.getFullYear(), 8, 1)
+  if (now.getMonth() >= 1) return new Date(now.getFullYear(), 1, 1)
+  return new Date(now.getFullYear() - 1, 8, 1)
+}
+
+function monthLabelToDate(label: string) {
+  const [month, year] = label.split('.').map(Number)
+  return new Date(year, Math.max(0, month - 1), 1)
+}
 function StudentProfilePageInner() {
   const { id } = useParams<{ id: string }>()
   const studentId = Number(id)
@@ -56,6 +72,14 @@ function StudentProfilePageInner() {
   const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [hiddenCats, setHiddenCats] = useState<Set<string>>(new Set())
+  const [analyticsPeriod, setAnalyticsPeriod] = useState<AnalyticsPeriod>('all')
+  const [linkCopied, setLinkCopied] = useState(false)
+
+  const periodAchievements = useMemo(() => {
+    const start = periodStart(analyticsPeriod)
+    if (!start) return data?.achievements ?? []
+    return (data?.achievements ?? []).filter((item) => item.created_at && new Date(item.created_at) >= start)
+  }, [analyticsPeriod, data?.achievements])
 
   useEffect(() => {
     if (!previewUrl) {
@@ -109,20 +133,40 @@ function StudentProfilePageInner() {
 
   useEffect(() => {
     if (!data) return
+    document.title = `${data.student.first_name} ${data.student.last_name} — Sirius.Achievements`
+    const description = `Подтверждённые достижения студента ${data.student.first_name} ${data.student.last_name}`
+    let meta = document.querySelector<HTMLMetaElement>('meta[name="description"]')
+    if (!meta) {
+      meta = document.createElement('meta')
+      meta.name = 'description'
+      document.head.appendChild(meta)
+    }
+    meta.content = description
+  }, [data])
+
+  useEffect(() => {
+    if (!data) return
     const colors = getChartThemeColors(theme)
 
     // Progress chart
     if (progressChartRef.current && data.chart_labels?.length) {
+      const start = periodStart(analyticsPeriod)
+      const visibleIndexes = data.chart_labels
+        .map((label, index) => ({ index, date: monthLabelToDate(label) }))
+        .filter((item) => !start || item.date >= start)
+        .map((item) => item.index)
+      const labels = visibleIndexes.map((index) => data.chart_labels[index])
+      const cumulativeBase = visibleIndexes.length ? (data.chart_cumulative[visibleIndexes[0] - 1] ?? 0) : 0
       progressInstanceRef.current?.destroy()
       const font = { family: "'Inter', system-ui, sans-serif", size: 10 }
       progressInstanceRef.current = new Chart(progressChartRef.current, {
         type: 'line',
         data: {
-          labels: data.chart_labels,
+          labels,
           datasets: [
             {
               label: 'Баллы (накопительно)',
-              data: data.chart_cumulative,
+              data: visibleIndexes.map((index) => (data.chart_cumulative[index] ?? 0) - cumulativeBase),
               borderColor: colors.accent,
               backgroundColor: colors.accentSoft,
               fill: true,
@@ -137,7 +181,7 @@ function StudentProfilePageInner() {
             },
             {
               label: 'Баллы за месяц',
-              data: data.chart_points,
+              data: visibleIndexes.map((index) => data.chart_points[index] ?? 0),
               borderColor: colors.accentStrong,
               backgroundColor: colors.accentStrongSoft,
               fill: true,
@@ -153,7 +197,7 @@ function StudentProfilePageInner() {
             },
             {
               label: 'Загрузки',
-              data: data.chart_uploads,
+              data: visibleIndexes.map((index) => data.chart_uploads[index] ?? 0),
               borderColor: colors.accentMuted,
               backgroundColor: colors.accentMutedSoft,
               fill: true,
@@ -189,15 +233,15 @@ function StudentProfilePageInner() {
       progressInstanceRef.current?.destroy()
       progressInstanceRef.current = null
     }
-  }, [data, theme])
+  }, [analyticsPeriod, data, theme])
 
   // Radar chart — rebuild when data or hiddenCats changes
   useEffect(() => {
-    if (!radarChartRef.current || !data?.achievements?.length) return
+    if (!radarChartRef.current || !periodAchievements.length) return
     const colors = getChartThemeColors(theme)
     const pointsMap: Record<string, number> = {}
     for (const cat of RADAR_CATS) pointsMap[cat] = 0
-    for (const a of data.achievements) {
+    for (const a of periodAchievements) {
       if (a.category && a.category in pointsMap) {
         pointsMap[a.category] = (pointsMap[a.category] ?? 0) + (a.points ?? 0)
       }
@@ -259,7 +303,7 @@ function StudentProfilePageInner() {
       radarInstanceRef.current?.destroy()
       radarInstanceRef.current = null
     }
-  }, [data, hiddenCats, theme])
+  }, [data, hiddenCats, periodAchievements, theme])
 
   const handleBack = () => {
     if (window.history.length > 1) {
@@ -269,10 +313,18 @@ function StudentProfilePageInner() {
     }
   }
 
+  const copyPublicLink = async () => {
+    if (!data) return
+    await navigator.clipboard.writeText(new URL(data.public_url, window.location.origin).toString())
+    setLinkCopied(true)
+    window.setTimeout(() => setLinkCopied(false), 1800)
+  }
+
   if (isLoading) return <div className="py-16"><LoadingSpinner /></div>
   if (!data) return null
 
-  const hasChartData = Boolean(data.chart_labels?.length)
+  const activePeriodStart = periodStart(analyticsPeriod)
+  const hasChartData = Boolean(data.chart_labels?.some((label) => !activePeriodStart || monthLabelToDate(label) >= activePeriodStart))
   const catStats = data.category_breakdown ?? []
   const topCategories = catStats.slice(0, 4)
 
@@ -284,6 +336,9 @@ function StudentProfilePageInner() {
           Назад
         </button>
         <div className="flex items-center gap-3">
+          <button type="button" onClick={() => void copyPublicLink()} className="rounded-lg border border-slate-200 bg-surface px-3 py-2 text-xs font-semibold text-slate-600 hover:text-indigo-600">
+            {linkCopied ? 'Ссылка скопирована' : 'Скопировать ссылку'}
+          </button>
           <span className="text-xs text-slate-400">Публичный профиль</span>
           <ThemeToggle />
         </div>
@@ -313,14 +368,14 @@ function StudentProfilePageInner() {
           </div>
 
           <div className="grid w-full gap-3 sm:grid-cols-2 xl:w-auto xl:min-w-[420px] xl:grid-cols-4">
-            <div className="rounded-2xl border border-indigo-100 bg-indigo-50/70 px-4 py-3 text-center">
+            {data.total_points !== null ? <div className="rounded-2xl border border-indigo-100 bg-indigo-50/70 px-4 py-3 text-center">
               <div className="text-2xl font-bold text-indigo-600">{data.total_points}</div>
               <div className="text-[11px] text-slate-500 uppercase tracking-wider">Баллов</div>
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-center">
+            </div> : null}
+            {data.total_docs !== null ? <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-center">
               <div className="text-2xl font-bold text-slate-700">{data.total_docs}</div>
               <div className="text-[11px] text-slate-500 uppercase tracking-wider">Достижений</div>
-            </div>
+            </div> : null}
             {data.group_rank ? (
               <div className="rounded-2xl border border-indigo-100 bg-indigo-50/70 px-4 py-3 text-center">
                 <div className="text-2xl font-bold text-indigo-500">#{data.group_rank}</div>
@@ -398,11 +453,23 @@ function StudentProfilePageInner() {
           </div>
         </section>
 
+        {data.student.resume_text ? (
+          <section className="rounded-2xl border border-slate-200 bg-surface p-5 shadow-sm">
+            <h3 className="text-sm font-semibold text-slate-700">AI-сводка профиля</h3>
+            <p className="mt-1 text-xs text-slate-400">Сформирована только по подтверждённым достижениям.</p>
+            <div className="mt-4 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">{data.student.resume_text}</div>
+          </section>
+        ) : null}
+
         {(hasChartData || data.achievements?.length) ? (
           <section className="bg-surface rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="border-b border-slate-100 px-4 py-3">
-              <h3 className="text-sm font-semibold text-slate-700">Аналитика достижений</h3>
-              <p className="mt-0.5 text-xs text-slate-400">Динамика баллов и распределение по направлениям</p>
+            <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <div><h3 className="text-sm font-semibold text-slate-700">Аналитика достижений</h3><p className="mt-0.5 text-xs text-slate-400">Динамика баллов и распределение по направлениям</p></div>
+              <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-[11px] font-semibold">
+                {([['all', 'Всё время'], ['year', 'Год'], ['season', 'Сезон']] as const).map(([value, label]) => (
+                  <button key={value} type="button" onClick={() => setAnalyticsPeriod(value)} className={`rounded-md px-2.5 py-1.5 ${analyticsPeriod === value ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>{label}</button>
+                ))}
+              </div>
             </div>
             <div className="grid gap-4 p-4 lg:grid-cols-2">
               {hasChartData ? (
@@ -411,10 +478,10 @@ function StudentProfilePageInner() {
                   <div className="h-56 w-full"><canvas ref={progressChartRef} /></div>
                 </div>
               ) : null}
-              {data.achievements?.length ? (() => {
+              {periodAchievements.length ? (() => {
             const pointsMap: Record<string, number> = {}
             for (const cat of RADAR_CATS) pointsMap[cat] = 0
-            for (const a of data.achievements) {
+            for (const a of periodAchievements) {
               if (a.category && a.category in pointsMap) {
                 pointsMap[a.category] = (pointsMap[a.category] ?? 0) + (a.points ?? 0)
               }
@@ -458,8 +525,8 @@ function StudentProfilePageInner() {
           </section>
         ) : null}
 
-          <div className="bg-surface rounded-2xl border border-slate-200 shadow-sm p-5">
-            <h3 className="text-sm font-semibold text-slate-700 mb-4">Достижения ({data.total_docs})</h3>
+          {data.public_visibility?.achievements !== false ? <div className="bg-surface rounded-2xl border border-slate-200 shadow-sm p-5">
+            <div className="mb-4 flex items-center justify-between gap-3"><h3 className="text-sm font-semibold text-slate-700">Подтверждённые достижения ({data.total_docs ?? data.achievements.length})</h3><span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-500">Только одобренные</span></div>
             {data.achievements.length ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
                 {data.achievements.map((a) => (
@@ -495,7 +562,7 @@ function StudentProfilePageInner() {
             ) : (
               <p className="text-sm text-slate-400 text-center py-8">Нет одобренных достижений</p>
             )}
-          </div>
+          </div> : null}
       </div>
 
 

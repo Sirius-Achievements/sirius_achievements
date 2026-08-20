@@ -16,7 +16,7 @@ from app.models.achievement import Achievement
 from app.models.enums import AchievementCategory, AchievementStatus, UserRole, UserStatus
 from app.models.season_result import SeasonResult
 from app.models.user import Users
-from app.utils.points import aggregated_gpa_bonus_expr
+from app.utils.points import aggregated_gpa_bonus_expr, calculate_gpa_bonus
 from app.utils.education import AVAILABLE_EDUCATION_LEVELS, COURSE_MAPPING, GROUP_MAPPING
 
 from app.utils.cache import cache_get_json, cache_set_json, invalidate_scoreboard_caches
@@ -131,14 +131,58 @@ async def _compute_ranked_base(user: Users, db: AsyncSession, education_level: s
     result = await db.execute(stmt)
     rows = result.all()
 
+    student_ids = [student.id for student, _points, _count in rows]
+    breakdown_by_user: dict[int, list[dict]] = {student_id: [] for student_id in student_ids}
+    if student_ids:
+        breakdown_stmt = (
+            select(
+                Achievement.user_id,
+                Achievement.category,
+                func.coalesce(func.sum(Achievement.points), 0).label('points'),
+            )
+            .join(Users, Users.id == Achievement.user_id)
+            .filter(
+                Achievement.user_id.in_(student_ids),
+                Achievement.status == AchievementStatus.APPROVED,
+                Users.role == UserRole.STUDENT,
+                Users.status == UserStatus.ACTIVE,
+            )
+        )
+        if categories:
+            breakdown_stmt = breakdown_stmt.filter(Achievement.category.in_(categories))
+        breakdown_stmt = breakdown_stmt.group_by(Achievement.user_id, Achievement.category)
+        for user_id, category, points in (await db.execute(breakdown_stmt)).all():
+            category_label = category.value if hasattr(category, 'value') else str(category)
+            breakdown_by_user[user_id].append({'label': category_label, 'points': int(points or 0)})
+
+    previous_by_user: dict[int, SeasonResult] = {}
+    if student_ids and not categories:
+        previous_stmt = (
+            select(SeasonResult)
+            .filter(SeasonResult.user_id.in_(student_ids))
+            .order_by(SeasonResult.created_at.desc(), SeasonResult.id.desc())
+        )
+        for previous in (await db.execute(previous_stmt)).scalars().all():
+            previous_by_user.setdefault(previous.user_id, previous)
+
     base = []
     for index, (student, points, achievements_count) in enumerate(rows, 1):
         view = serialize_user(student) if full_users else serialize_user_public(student)
+        breakdown = list(breakdown_by_user.get(student.id, []))
+        if include_gpa_bonus:
+            gpa_bonus = calculate_gpa_bonus(student.session_gpa)
+            if gpa_bonus:
+                breakdown.append({'label': 'Бонус за средний балл', 'points': gpa_bonus})
+        breakdown.sort(key=lambda item: item['points'], reverse=True)
+        previous = previous_by_user.get(student.id)
         base.append({
             'rank': index,
             'user': view,
             'total_points': int(points or 0),
             'achievements_count': int(achievements_count or 0),
+            'points_breakdown': breakdown,
+            'previous_rank': previous.rank if previous else None,
+            'previous_season': previous.season_name if previous else None,
         })
     return base
 
@@ -179,6 +223,9 @@ async def _build_leaderboard_payload(user: Users, db: AsyncSession, education_le
                 'user': peer_view,
                 'total_points': row['total_points'],
                 'achievements_count': row['achievements_count'],
+                'points_breakdown': row.get('points_breakdown', []),
+                'previous_rank': row.get('previous_rank'),
+                'previous_season': row.get('previous_season'),
                 'is_me': is_me,
             }
         )
@@ -240,6 +287,91 @@ async def leaderboard(
     return await _build_leaderboard_payload(current_user, db, scoped_education_level, scoped_course, selected, scoped_group, category_logic)
 
 
+@router.get('/seasons')
+async def completed_seasons(
+    education_level: str | None = Query(None),
+    course: str | None = Query(None),
+    group: str | None = Query(None),
+    scope: str | None = Query(None),
+    current_user=Depends(auth),
+    db: AsyncSession = Depends(get_db),
+):
+    course_int = int(course) if course and course.isdigit() else None
+    if scope == 'global' and not current_user.is_staff:
+        scoped_education_level, scoped_course, scoped_group = 'all', 0, 'all'
+    else:
+        scoped_education_level = _scoped_education_level(current_user, education_level)
+        scoped_course = _scoped_course(current_user, course_int)
+        scoped_group = group or 'all'
+
+    stmt = (
+        select(
+            SeasonResult.season_name,
+            func.max(SeasonResult.created_at).label('created_at'),
+            func.count(SeasonResult.id).label('participants'),
+        )
+        .join(Users, Users.id == SeasonResult.user_id)
+        .filter(Users.role == UserRole.STUDENT, Users.status != UserStatus.DELETED)
+    )
+    stmt = _apply_student_scope(stmt, current_user, scoped_education_level, scoped_course, scoped_group)
+    stmt = stmt.group_by(SeasonResult.season_name).order_by(desc('created_at'))
+    rows = (await db.execute(stmt)).all()
+    return {
+        'seasons': [
+            {
+                'name': name,
+                'created_at': created_at.isoformat() if created_at else None,
+                'participants': int(participants or 0),
+            }
+            for name, created_at, participants in rows
+        ]
+    }
+
+
+@router.get('/seasons/{season_name}')
+async def completed_season_results(
+    season_name: str,
+    education_level: str | None = Query(None),
+    course: str | None = Query(None),
+    group: str | None = Query(None),
+    scope: str | None = Query(None),
+    current_user=Depends(auth),
+    db: AsyncSession = Depends(get_db),
+):
+    course_int = int(course) if course and course.isdigit() else None
+    if scope == 'global' and not current_user.is_staff:
+        scoped_education_level, scoped_course, scoped_group = 'all', 0, 'all'
+    else:
+        scoped_education_level = _scoped_education_level(current_user, education_level)
+        scoped_course = _scoped_course(current_user, course_int)
+        scoped_group = group or 'all'
+
+    stmt = (
+        select(SeasonResult, Users)
+        .join(Users, Users.id == SeasonResult.user_id)
+        .filter(
+            SeasonResult.season_name == season_name,
+            Users.role == UserRole.STUDENT,
+            Users.status != UserStatus.DELETED,
+        )
+    )
+    stmt = _apply_student_scope(stmt, current_user, scoped_education_level, scoped_course, scoped_group)
+    stmt = stmt.order_by(SeasonResult.rank.asc(), SeasonResult.id.asc())
+    rows = (await db.execute(stmt)).all()
+    return {
+        'season_name': season_name,
+        'leaderboard': [
+            {
+                'rank': result.rank,
+                'total_points': result.points,
+                'user': serialize_user(student) if student.id == current_user.id else serialize_user_public(student),
+                'is_me': student.id == current_user.id,
+            }
+            for result, student in rows
+        ],
+    }
+
+
 @router.get('/export')
 async def export_leaderboard(
     education_level: str | None = Query(None),
@@ -296,6 +428,13 @@ async def end_season(
     if current_user.role != UserRole.SUPER_ADMIN:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Только супер-админ может завершать сезон.')
 
+    season_name = season_name.strip()
+    if len(season_name) < 3:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail='Укажите название сезона длиной не менее 3 символов.')
+    existing_season = await db.scalar(select(func.count(SeasonResult.id)).filter(SeasonResult.season_name == season_name))
+    if existing_season:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail='Сезон с таким названием уже существует.')
+
     achievement_points = func.coalesce(func.sum(Achievement.points), 0)
     total_points_expr = (
         achievement_points + aggregated_gpa_bonus_expr(Users.session_gpa)
@@ -328,4 +467,3 @@ async def end_season(
     await invalidate_scoreboard_caches()
 
     return {'success': True}
-
