@@ -300,8 +300,23 @@ pipeline {
           APP_IMAGE="$APP_IMAGE" VLLM_MODEL="$VLLM_MODEL" compose -f "$VPS_COMPOSE_FILE" up -d --no-deps web
           compose -f "$VPS_COMPOSE_FILE" up -d nginx
 
-          echo "Waiting for web container to start..."
-          sleep 30
+          echo "Waiting for web container to become healthy..."
+          WEB_READY=false
+          for attempt in $(seq 1 18); do
+            STATUS=$(docker inspect --format='{{.State.Status}}' sirius_app_new 2>/dev/null || echo 'missing')
+            HEALTH=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' sirius_app_new 2>/dev/null || echo 'missing')
+            echo "Web readiness ${attempt}/18: status=$STATUS health=$HEALTH"
+            if [ "$STATUS" = "running" ] && { [ "$HEALTH" = "healthy" ] || [ "$HEALTH" = "none" ]; }; then
+              WEB_READY=true
+              break
+            fi
+            sleep 10
+          done
+          if [ "$WEB_READY" != "true" ]; then
+            echo "Web container did not become healthy in time."
+            docker logs --tail=100 sirius_app_new || true
+            exit 1
+          fi
         '''
       }
     }
@@ -322,10 +337,17 @@ pipeline {
             exit 1
           fi
 
-          HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "$WEB_HEALTH_URL" || echo '000')
-          echo "Health endpoint returned: $HTTP"
+          HTTP='000'
+          for attempt in $(seq 1 12); do
+            HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "$WEB_HEALTH_URL" || echo '000')
+            echo "Public health ${attempt}/12 returned: $HTTP"
+            if [ "$HTTP" = "200" ]; then
+              break
+            fi
+            sleep 10
+          done
           if [ "$HTTP" != "200" ]; then
-            echo "Health check failed! Got HTTP $HTTP"
+            echo "Health check failed after retries! Got HTTP $HTTP"
             docker logs --tail=100 sirius_app_new || true
             exit 1
           fi
