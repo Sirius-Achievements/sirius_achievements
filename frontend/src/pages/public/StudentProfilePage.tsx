@@ -5,6 +5,7 @@ import Chart from 'chart.js/auto'
 import client from '@/api/client'
 import { publicApi, PublicStudentResponse } from '@/api/public'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
+import { SeasonHallOfFame } from '@/components/profile/SeasonHallOfFame'
 import { ThemeToggle } from '@/components/ui/ThemeToggle'
 import { useAuth } from '@/hooks/useAuth'
 import { useTheme } from '@/hooks/useTheme'
@@ -395,6 +396,8 @@ function StudentProfilePageInner() {
           </div>
         </div>
       </div>
+
+      {data.season_history?.length ? <SeasonHallOfFame items={data.season_history} className="mb-6" /> : null}
 
       <div className="space-y-4">
         <section className="bg-surface rounded-2xl border border-slate-200 shadow-sm overflow-hidden">

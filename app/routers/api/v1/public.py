@@ -10,6 +10,7 @@ from app.infrastructure.database import get_db
 from app.middlewares.api_auth_middleware import auth, auth_optional
 from app.models.achievement import Achievement
 from app.models.enums import AchievementStatus, UserRole, UserStatus
+from app.models.season_result import SeasonResult
 from app.models.user import Users
 from app.utils import storage
 from app.utils.media_paths import guess_media_type, resolve_static_path
@@ -69,6 +70,11 @@ async def public_student_profile(
         .order_by(Achievement.created_at.desc())
     )
     achievements = (await db.execute(achievements_stmt)).scalars().all()
+    season_history = (await db.execute(
+        select(SeasonResult)
+        .filter(SeasonResult.user_id == student_id)
+        .order_by(SeasonResult.created_at.desc(), SeasonResult.id.desc())
+    )).scalars().all()
 
     gpa_bonus = calculate_gpa_bonus(student.session_gpa)
     total_points = sum(int(item.points or 0) for item in achievements) + gpa_bonus
@@ -202,6 +208,16 @@ async def public_student_profile(
         'group_total': group_total,
         'group_name': student.study_group,
         'gpa_bonus': gpa_bonus if visibility['gpa'] else 0,
+        'season_history': [
+            {
+                'id': item.id,
+                'season_name': item.season_name,
+                'points': int(item.points or 0),
+                'rank': int(item.rank or 0),
+                'created_at': item.created_at.isoformat() if item.created_at else None,
+            }
+            for item in season_history
+        ] if visibility['score'] else [],
         'chart_labels': chart_labels if visibility['analytics'] else [],
         'chart_points': chart_points if visibility['analytics'] else [],
         'chart_uploads': chart_uploads if visibility['analytics'] else [],

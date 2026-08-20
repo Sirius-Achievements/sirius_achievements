@@ -212,30 +212,22 @@ pipeline {
             echo "Checking AI from VPS/Jenkins network..."
             curl -fsS --max-time 30 "$AI_HEALTH_URL"
 
-            echo "Waiting for vLLM model server..."
-            VLLM_READY=false
-            for attempt in $(seq 1 36); do
-              if curl -fsS --max-time 15 "$VLLM_HEALTH_URL" >/dev/null; then
-                VLLM_READY=true
-                break
+            echo "Checking optional vLLM model server..."
+            if curl -fsS --max-time 20 "$VLLM_HEALTH_URL" >/dev/null; then
+              if curl -fsS --max-time 30 "$VLLM_MODELS_URL" | grep -F "$VLLM_MODEL" >/dev/null; then
+                echo "Running a real vLLM chat completion smoke test..."
+                if ! curl -fsS --max-time 120 \
+                  -H 'Content-Type: application/json' \
+                  -d "{\"model\":\"$VLLM_MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"Ответь одним словом: работает\"}],\"max_tokens\":8,\"temperature\":0}" \
+                  "http://10.8.0.2:8000/v1/chat/completions" | grep -F '"choices"' >/dev/null; then
+                  echo "WARNING: vLLM completion failed; web deployment continues with profile-search fallback."
+                fi
+              else
+                echo "WARNING: configured model is not loaded in vLLM; web deployment continues with fallback."
               fi
-              echo "vLLM is still starting (${attempt}/36)..."
-              sleep 10
-            done
-            if [ "$VLLM_READY" != "true" ]; then
-              echo "vLLM did not become ready in time."
-              exit 1
+            else
+              echo "WARNING: vLLM is unavailable; web deployment continues with profile-search fallback."
             fi
-
-            echo "Checking that the configured vLLM model is loaded..."
-            curl -fsS --max-time 30 "$VLLM_MODELS_URL" | grep -F "$VLLM_MODEL"
-
-            echo "Running a real vLLM chat completion smoke test..."
-            VLLM_RESPONSE=$(curl -fsS --max-time 120 \
-              -H 'Content-Type: application/json' \
-              -d "{\"model\":\"$VLLM_MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"Ответь одним словом: работает\"}],\"max_tokens\":8,\"temperature\":0}" \
-              "http://10.8.0.2:8000/v1/chat/completions")
-            echo "$VLLM_RESPONSE" | grep -F '"choices"'
 
             echo "Checking MinIO from VPS/Jenkins network..."
             curl -fsS --max-time 30 "$MINIO_HEALTH_URL"

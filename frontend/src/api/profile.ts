@@ -1,5 +1,5 @@
 import client from './client'
-import { User } from '@/types/user'
+import { SeasonResult, User } from '@/types/user'
 
 export interface ProfileResponse {
   user: User
@@ -14,6 +14,7 @@ export interface ProfileResponse {
   gpa_bonus: number
   profile_completion: number
   public_visibility: Record<string, boolean>
+  season_history: SeasonResult[]
   resume_versions: Array<{ id: number; text: string; source_documents_count: number; created_at?: string | null }>
 }
 

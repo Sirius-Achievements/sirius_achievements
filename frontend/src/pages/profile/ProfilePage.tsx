@@ -5,6 +5,7 @@ import Cropper, { DEFAULT_TEMPLATE } from 'cropperjs'
 import { profileApi, type ProfileResponse } from '@/api/profile'
 import { usersApi } from '@/api/users'
 import { PasswordRequirements } from '@/components/auth/PasswordRequirements'
+import { SeasonHallOfFame } from '@/components/profile/SeasonHallOfFame'
 import { DocumentPreviewImage } from '@/components/ui/DocumentPreviewImage'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { useAuth } from '@/hooks/useAuth'
@@ -655,6 +656,10 @@ export function ProfilePage() {
         {error && (
           <div className="mb-6 bg-red-50 border border-red-100 text-red-600 text-sm px-4 py-3 rounded-lg">{error}</div>
         )}
+
+        {activeTab === 'overview' && isStudent && profile.season_history?.length ? (
+          <SeasonHallOfFame items={profile.season_history} className="mb-6" />
+        ) : null}
 
         <div className={`bg-surface rounded-xl border border-slate-200 overflow-hidden ${activeTab === 'documents' || activeTab === 'analytics' ? 'hidden' : ''}`}>
           {/* ===== PROFILE TAB ===== */}

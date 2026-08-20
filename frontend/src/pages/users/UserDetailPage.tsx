@@ -5,6 +5,7 @@ import Chart from 'chart.js/auto'
 import { documentsApi } from '@/api/documents'
 import { usersApi } from '@/api/users'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
+import { SeasonHallOfFame } from '@/components/profile/SeasonHallOfFame'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useAuth } from '@/hooks/useAuth'
 import { useTheme } from '@/hooks/useTheme'
@@ -731,7 +732,7 @@ export function UserDetailPage() {
             {!canGenerateResume && resumeReason ? <p className="mt-2 text-[11px] text-indigo-400">{resumeReason}</p> : null}
           </div> : null}
 
-          {activeTab === 'documents' && detail.season_history.length ? <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden text-white shadow-md relative"><div className="px-5 py-3 border-b border-slate-700/50 flex justify-between items-center relative z-10"><h3 className="text-sm font-bold text-white">Зал славы (Архив сезонов)</h3></div><div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4 relative z-10">{detail.season_history.map((item) => <div key={item.id} className="bg-surface/10 rounded-lg p-4 flex justify-between items-center border border-white/5 hover:bg-surface/20 transition-colors"><div><div className="text-xs font-bold text-slate-200">{item.season_name}</div><div className="text-[10px] text-slate-400 mt-1 uppercase tracking-wider font-semibold">Место: <span className="text-white text-sm">#{item.rank}</span></div></div><div className="text-xl font-black text-yellow-400">{item.points} <span className="text-[10px] font-normal text-slate-400">б.</span></div></div>)}</div></div> : null}
+          {activeTab === 'documents' && detail.season_history.length ? <SeasonHallOfFame items={detail.season_history} /> : null}
 
           {activeTab === 'documents' ? <div className="bg-surface rounded-xl border border-slate-200 overflow-hidden shadow-sm">
             <div className="px-5 py-3 border-b border-slate-100 bg-slate-50 flex justify-between items-center">

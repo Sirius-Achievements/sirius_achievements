@@ -17,6 +17,7 @@ from app.middlewares.api_auth_middleware import auth
 from app.models.achievement import Achievement
 from app.models.enums import AchievementStatus, UserStatus
 from app.models.resume_version import ResumeVersion
+from app.models.season_result import SeasonResult
 from app.repositories.admin.user_repository import UserRepository
 from app.repositories.admin.user_token_repository import UserTokenRepository
 from app.schemas.admin.auth import ResetPasswordSchema
@@ -174,6 +175,12 @@ async def profile(current_user=Depends(auth), db: AsyncSession = Depends(get_db)
         .limit(10)
     )).scalars().all()
 
+    season_history = (await db.execute(
+        select(SeasonResult)
+        .filter(SeasonResult.user_id == user.id)
+        .order_by(SeasonResult.created_at.desc(), SeasonResult.id.desc())
+    )).scalars().all()
+
     completed_fields = [
         bool(user.first_name),
         bool(user.last_name),
@@ -197,6 +204,16 @@ async def profile(current_user=Depends(auth), db: AsyncSession = Depends(get_db)
         'gpa_bonus': calculate_gpa_bonus(user.session_gpa),
         'profile_completion': round(sum(completed_fields) / len(completed_fields) * 100),
         'public_visibility': {**PUBLIC_VISIBILITY_DEFAULTS, **(user.public_visibility or {})},
+        'season_history': [
+            {
+                'id': item.id,
+                'season_name': item.season_name,
+                'points': int(item.points or 0),
+                'rank': int(item.rank or 0),
+                'created_at': item.created_at.isoformat() if item.created_at else None,
+            }
+            for item in season_history
+        ],
         'resume_versions': [
             {
                 'id': item.id,

@@ -1,5 +1,6 @@
 import client from './client'
 import { Achievement } from '@/types/achievement'
+import { SeasonResult } from '@/types/user'
 
 export interface PublicStudentAchievement extends Achievement {
   preview_url: string | null
@@ -28,6 +29,7 @@ export interface PublicStudentResponse {
   group_total?: number
   group_name?: string | null
   gpa_bonus: number
+  season_history: SeasonResult[]
   chart_labels: string[]
   chart_points: number[]
   chart_uploads: number[]
