@@ -23,6 +23,7 @@ services:
       MINIO_BUCKET: ${MINIO_BUCKET:-sirius-files}
       AI_SERVICE_URL: http://${PC_VPN_IP:-10.8.0.2}:8001
       LOCAL_LLM_BASE_URL: http://${PC_VPN_IP:-10.8.0.2}:8000/v1
+      LOCAL_LLM_MODEL: ${VLLM_MODEL:-Qwen/Qwen2.5-3B-Instruct-AWQ}
       TZ: Europe/Moscow
     volumes:
       - uploads_data:/app/static/uploads

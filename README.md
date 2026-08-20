@@ -670,6 +670,7 @@ OpenAPI (Swagger UI / ReDoc) автоматически отключаются �
 |------------|------------|
 | `LOCAL_LLM_BASE_URL` | Адрес OpenAI-совместимого API vLLM (по умолчанию `http://vllm:8000/v1`) |
 | `LOCAL_LLM_MODEL` | Название модели (например, `Qwen/Qwen2.5-3B-Instruct-AWQ`) |
+| `VLLM_MODEL` | Модель, которую запускает контейнер vLLM; должна совпадать с `LOCAL_LLM_MODEL` |
 | `LOCAL_LLM_API_KEY` | API-ключ vLLM (если настроен) |
 | `LOCAL_LLM_TIMEOUT` | Таймаут запроса к vLLM (сек) |
 | `RESUME_LOCAL_AI_ENABLED` | Включить локальную LLM для генерации сводки |
@@ -871,7 +872,7 @@ docker exec sirius_app_new python app/seeders/main.py   # опционально
 ### 17.3 CI/CD (Jenkins)
 
 - `Jenkinsfile` в корне репозитория.
-- Шаги: checkout → build образов → запуск pytest → деплой через `docker compose up -d --build` → smoke-тесты `/health`.
+- Шаги: checkout → build образов → запуск PostgreSQL, Redis, MinIO, OCR и vLLM → сборка и деплой веб-приложения → smoke-тесты web/OCR/vLLM, включая реальный `/chat/completions`.
 - Jenkins работает с примонтированным `/var/run/docker.sock` (управляет хост-Docker).
 
 ### 17.4 Nginx

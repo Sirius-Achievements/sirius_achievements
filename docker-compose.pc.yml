@@ -80,7 +80,7 @@ services:
     container_name: sirius_vllm_new
     restart: always
     command:
-      - "--model=Qwen/Qwen2.5-3B-Instruct-AWQ"
+      - "--model=${VLLM_MODEL:-Qwen/Qwen2.5-3B-Instruct-AWQ}"
       - "--quantization=awq"
       - "--max-model-len=8192"
       - "--gpu-memory-utilization=0.90"
@@ -107,4 +107,3 @@ volumes:
   redis_data:
   minio_data:
   vllm_hf_cache:
-

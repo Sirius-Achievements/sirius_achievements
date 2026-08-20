@@ -30,6 +30,9 @@ pipeline {
     AI_IMAGE_BASE  = 'sirius-ai-service'
 
     AI_HEALTH_URL    = 'http://10.8.0.2:8001/health'
+    VLLM_HEALTH_URL  = 'http://10.8.0.2:8000/health'
+    VLLM_MODELS_URL  = 'http://10.8.0.2:8000/v1/models'
+    VLLM_MODEL       = 'Qwen/Qwen2.5-3B-Instruct-AWQ'
     MINIO_HEALTH_URL = 'http://10.8.0.2:9000/minio/health/ready'
     WEB_HEALTH_URL   = 'https://sirius-achievements.ru/health'
 
@@ -190,7 +193,7 @@ pipeline {
                 if docker compose version >/dev/null 2>&1; then docker compose \"\$@\"; else docker-compose \"\$@\"; fi
               }
               cd '$PC_DEPLOY_DIR'
-              AI_IMAGE='$AI_IMAGE' compose -f '$PC_COMPOSE_FILE' up -d db redis minio ai_service
+              AI_IMAGE='$AI_IMAGE' VLLM_MODEL='$VLLM_MODEL' compose -f '$PC_COMPOSE_FILE' up -d db redis minio ai_service vllm
             "
           '''
         }
@@ -208,6 +211,31 @@ pipeline {
 
             echo "Checking AI from VPS/Jenkins network..."
             curl -fsS --max-time 30 "$AI_HEALTH_URL"
+
+            echo "Waiting for vLLM model server..."
+            VLLM_READY=false
+            for attempt in $(seq 1 36); do
+              if curl -fsS --max-time 15 "$VLLM_HEALTH_URL" >/dev/null; then
+                VLLM_READY=true
+                break
+              fi
+              echo "vLLM is still starting (${attempt}/36)..."
+              sleep 10
+            done
+            if [ "$VLLM_READY" != "true" ]; then
+              echo "vLLM did not become ready in time."
+              exit 1
+            fi
+
+            echo "Checking that the configured vLLM model is loaded..."
+            curl -fsS --max-time 30 "$VLLM_MODELS_URL" | grep -F "$VLLM_MODEL"
+
+            echo "Running a real vLLM chat completion smoke test..."
+            VLLM_RESPONSE=$(curl -fsS --max-time 120 \
+              -H 'Content-Type: application/json' \
+              -d "{\"model\":\"$VLLM_MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"Ответь одним словом: работает\"}],\"max_tokens\":8,\"temperature\":0}" \
+              "http://10.8.0.2:8000/v1/chat/completions")
+            echo "$VLLM_RESPONSE" | grep -F '"choices"'
 
             echo "Checking MinIO from VPS/Jenkins network..."
             curl -fsS --max-time 30 "$MINIO_HEALTH_URL"
@@ -269,7 +297,7 @@ pipeline {
             if docker compose version >/dev/null 2>&1; then docker compose "$@"; else docker-compose "$@"; fi
           }
 
-          APP_IMAGE="$APP_IMAGE" compose -f "$VPS_COMPOSE_FILE" up -d --no-deps web
+          APP_IMAGE="$APP_IMAGE" VLLM_MODEL="$VLLM_MODEL" compose -f "$VPS_COMPOSE_FILE" up -d --no-deps web
           compose -f "$VPS_COMPOSE_FILE" up -d nginx
 
           echo "Waiting for web container to start..."
@@ -401,6 +429,7 @@ AI:  ${env.AI_IMAGE}
 Health checks:
 Web:   ${env.WEB_HEALTH_URL}
 AI:    ${env.AI_HEALTH_URL}
+vLLM:  ${env.VLLM_HEALTH_URL} (${env.VLLM_MODEL})
 MinIO: ${env.MINIO_HEALTH_URL}
 
 Logs:
