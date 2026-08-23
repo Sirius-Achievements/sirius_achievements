@@ -69,6 +69,13 @@ async def _apply_schema_updates():
         "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS session_expires_at TIMESTAMPTZ",
         "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ",
         "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ",
+        # support chat metadata (some legacy production databases were stamped
+        # past the migration without actually receiving these columns)
+        "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS category VARCHAR(50) NOT NULL DEFAULT 'technical'",
+        "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS resolution VARCHAR(50)",
+        "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS student_unread_count INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS moderator_unread_count INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS reply_to_id INTEGER REFERENCES support_messages(id) ON DELETE SET NULL",
         # users security columns
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS session_version INTEGER NOT NULL DEFAULT 1",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS api_access_version INTEGER NOT NULL DEFAULT 1",
@@ -95,6 +102,12 @@ async def _apply_schema_updates():
         # exact season ownership for archived documents
         "ALTER TABLE achievements ADD COLUMN IF NOT EXISTS archived_season VARCHAR(100)",
         "ALTER TABLE achievements ADD COLUMN IF NOT EXISTS archived_from_status VARCHAR(20)",
+        # bug-report diagnostics
+        "ALTER TABLE bug_reports ADD COLUMN IF NOT EXISTS console_summary TEXT",
+        "ALTER TABLE bug_reports ADD COLUMN IF NOT EXISTS network_summary TEXT",
+        "ALTER TABLE bug_reports ADD COLUMN IF NOT EXISTS fingerprint VARCHAR(255)",
+        "ALTER TABLE bug_reports ADD COLUMN IF NOT EXISTS status VARCHAR(32) NOT NULL DEFAULT 'open'",
+        "ALTER TABLE bug_reports ADD COLUMN IF NOT EXISTS session_elapsed_ms INTEGER",
         # rename legacy study groups to ИОП-ИТ scheme
         "UPDATE users SET study_group = 'ИОП-ИТ-25/1' WHERE study_group = 'С-101'",
         "UPDATE users SET study_group = 'ИОП-ИТ-25/2' WHERE study_group = 'С-102'",
@@ -118,6 +131,8 @@ async def _apply_schema_updates():
         "CREATE INDEX IF NOT EXISTS ix_user_notes_user_id ON user_notes (user_id)",
         "CREATE INDEX IF NOT EXISTS ix_support_tickets_user_status ON support_tickets (user_id, status)",
         "CREATE INDEX IF NOT EXISTS ix_support_messages_ticket_id ON support_messages (ticket_id)",
+        "CREATE INDEX IF NOT EXISTS ix_bug_reports_fingerprint ON bug_reports (fingerprint)",
+        "CREATE INDEX IF NOT EXISTS ix_bug_reports_status ON bug_reports (status)",
     ]
 
     # ── Add missing enum values (PostgreSQL 12+ supports ADD VALUE in transactions) ──
