@@ -17,6 +17,7 @@ import { getErrorMessage } from '@/utils/http'
 import { courseLabel, coursesForEducationLevel, groupsForEducationLevel, roleLabel, userStatusLabel } from '@/utils/labels'
 import { buildMediaUrl } from '@/utils/media'
 import { getChartThemeColors } from '@/utils/chartTheme'
+import { createAchievementPortraitPlugin } from '@/utils/achievementPortrait'
 
 const RADAR_CATS = ['Спорт', 'Наука', 'Искусство', 'Волонтёрство', 'Хакатон', 'Патриотизм', 'Проекты', 'Другое']
 function achievementStatusLabel(status: string) {
@@ -223,7 +224,7 @@ export function UserDetailPage() {
   }, [activeTab, detail, isLoading, theme])
 
   useEffect(() => {
-    if (!radarChartRef.current || !detail?.achievements?.length) return
+    if (!radarChartRef.current || !detail || detail.user.role !== 'STUDENT') return
     const colors = getChartThemeColors(theme)
     const pointsMap: Record<string, number> = {}
     for (const cat of RADAR_CATS) pointsMap[cat] = 0
@@ -231,31 +232,30 @@ export function UserDetailPage() {
       const cat = a.category as string
       if (cat in pointsMap) pointsMap[cat] = (pointsMap[cat] ?? 0) + (a.points ?? 0)
     }
-    if (!RADAR_CATS.some((c) => (pointsMap[c] ?? 0) > 0)) return
-    const maxVal = Math.max(...RADAR_CATS.map((c) => pointsMap[c] ?? 0))
+    const maxVal = Math.max(1, ...RADAR_CATS.map((c) => pointsMap[c] ?? 0))
     const font = { family: "'Inter', system-ui, sans-serif", size: 10 }
+    const renderedValues = RADAR_CATS.map((cat) => hiddenCats.has(cat) ? 0 : (pointsMap[cat] ?? 0))
     radarInstanceRef.current?.destroy()
     radarInstanceRef.current = new Chart(radarChartRef.current, {
       type: 'radar',
+      plugins: [createAchievementPortraitPlugin(renderedValues, { border: colors.accent, background: colors.accentSoft })],
       data: {
         labels: RADAR_CATS,
         datasets: [{
           label: 'Достижения',
-          data: RADAR_CATS.map((cat) => {
-            const value = pointsMap[cat] ?? 0
-            return hiddenCats.has(cat) || value <= 0 ? null : value
-          }),
-          borderColor: colors.accent,
-          backgroundColor: colors.accentSoft,
-          fill: true,
-          spanGaps: true,
+          data: renderedValues,
+          borderColor: 'transparent',
+          backgroundColor: 'transparent',
+          fill: false,
+          showLine: false,
+          spanGaps: false,
           tension: 0,
-          borderWidth: 2,
+          borderWidth: 0,
           pointBackgroundColor: colors.accentStrong,
           pointBorderColor: colors.pointBackground,
           pointBorderWidth: 1,
-          pointRadius: RADAR_CATS.map((cat) => !hiddenCats.has(cat) && (pointsMap[cat] ?? 0) > 0 ? 3 : 0),
-          pointHoverRadius: RADAR_CATS.map((cat) => !hiddenCats.has(cat) && (pointsMap[cat] ?? 0) > 0 ? 5 : 0),
+          pointRadius: RADAR_CATS.map(() => 3),
+          pointHoverRadius: RADAR_CATS.map(() => 5),
         }],
       },
       options: {
@@ -525,15 +525,14 @@ export function UserDetailPage() {
           : 25 + Math.floor((parsedGpa - 4.5) * 10)
     : 0
 
-  const studentPortrait = detail.user.role === 'STUDENT' && detail.achievements.length ? (() => {
+  const studentPortrait = detail.user.role === 'STUDENT' ? (() => {
     const pointsMap: Record<string, number> = {}
     for (const cat of RADAR_CATS) pointsMap[cat] = 0
     for (const achievement of detail.achievements) {
       const category = achievement.category as string
       if (category in pointsMap) pointsMap[category] = (pointsMap[category] ?? 0) + (achievement.points ?? 0)
     }
-    const activeCats = RADAR_CATS.filter((category) => pointsMap[category] > 0)
-    if (!activeCats.length) return null
+    const activeCats = RADAR_CATS
     return (
       <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-3">
         <h4 className="mb-2 text-xs font-semibold text-slate-600">Портрет</h4>

@@ -3,7 +3,8 @@ import string
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.models.user import Users
-from app.models.enums import UserRole, UserStatus
+from app.models.enums import EducationLevel, UserRole, UserStatus
+from app.utils.education import groups_for
 from app.utils.password import hash_password
 
 
@@ -61,6 +62,9 @@ class UsersTableSeeder:
             last_name="User",
             role=UserRole.STUDENT.value,
             status=UserStatus.ACTIVE.value,
+            education_level=EducationLevel.SPECIALIST.value,
+            course=1,
+            study_group=groups_for(EducationLevel.SPECIALIST.value, 1)[0],
             is_active=True
         )
         db.add(student)

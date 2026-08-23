@@ -10,6 +10,7 @@ import { ThemeToggle } from '@/components/ui/ThemeToggle'
 import { useAuth } from '@/hooks/useAuth'
 import { useTheme } from '@/hooks/useTheme'
 import { getChartThemeColors } from '@/utils/chartTheme'
+import { createAchievementPortraitPlugin } from '@/utils/achievementPortrait'
 import { getErrorMessage } from '@/utils/http'
 import { courseLabel } from '@/utils/labels'
 import { buildMediaUrl } from '@/utils/media'
@@ -226,29 +227,29 @@ function StudentProfilePageInner() {
     }
     const maxVal = Math.max(1, ...RADAR_CATS.map((c) => pointsMap[c] ?? 0))
     const font = { family: "'Inter', system-ui, sans-serif", size: 10 }
+    const renderedValues = RADAR_CATS.map((cat) => hiddenCats.has(cat) ? 0 : (pointsMap[cat] ?? 0))
 
     radarInstanceRef.current?.destroy()
     radarInstanceRef.current = new Chart(radarChartRef.current, {
       type: 'radar',
+      plugins: [createAchievementPortraitPlugin(renderedValues, { border: colors.accent, background: colors.accentSoft })],
       data: {
         labels: RADAR_CATS,
         datasets: [{
           label: 'Достижения',
-          data: RADAR_CATS.map((cat) => {
-            const value = pointsMap[cat] ?? 0
-            return hiddenCats.has(cat) ? null : value
-          }),
-          borderColor: colors.accent,
-          backgroundColor: colors.accentSoft,
-          fill: true,
-          spanGaps: true,
+          data: renderedValues,
+          borderColor: 'transparent',
+          backgroundColor: 'transparent',
+          fill: false,
+          showLine: false,
+          spanGaps: false,
           tension: 0,
-          borderWidth: 2,
+          borderWidth: 0,
           pointBackgroundColor: colors.accentStrong,
           pointBorderColor: colors.pointBackground,
           pointBorderWidth: 1,
-          pointRadius: RADAR_CATS.map((cat) => !hiddenCats.has(cat) ? 3 : 0),
-          pointHoverRadius: RADAR_CATS.map((cat) => !hiddenCats.has(cat) ? 5 : 0),
+          pointRadius: RADAR_CATS.map(() => 3),
+          pointHoverRadius: RADAR_CATS.map(() => 5),
         }],
       },
       options: {
