@@ -81,6 +81,10 @@ services:
     image: vllm/vllm-openai:v0.6.6.post1
     container_name: sirius_vllm_new
     restart: always
+    environment:
+      # The accelerated downloader intermittently aborts large model layers on
+      # this host. Standard Hugging Face downloads resume reliably from cache.
+      HF_HUB_ENABLE_HF_TRANSFER: "0"
     command:
       - "--model=${VLLM_MODEL:-Qwen/Qwen2.5-3B-Instruct-AWQ}"
       - "--quantization=awq"
