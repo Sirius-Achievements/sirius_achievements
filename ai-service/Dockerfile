@@ -10,12 +10,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir \
+RUN pip install --no-cache-dir --timeout 120 --retries 10 \
         torch==2.7.1 \
         torchvision==0.22.1 \
         torchaudio==2.7.1 \
         --extra-index-url https://download.pytorch.org/whl/cpu \
- && pip install --no-cache-dir -r requirements.txt
+ && pip install --no-cache-dir --timeout 120 --retries 10 -r requirements.txt
 
 COPY . .
 
