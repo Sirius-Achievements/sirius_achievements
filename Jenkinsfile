@@ -204,6 +204,19 @@ pipeline {
             set -e
 
             echo "Checking AI from VPS/Jenkins network..."
+            AI_READY=false
+            for attempt in $(seq 1 18); do
+              if curl -fsS --max-time 10 "$AI_HEALTH_URL" >/dev/null; then
+                AI_READY=true
+                break
+              fi
+              echo "AI/OCR service is still starting ($attempt/18)..."
+              sleep 5
+            done
+            if [ "$AI_READY" != true ]; then
+              echo "ERROR: AI/OCR service did not become ready in time."
+              exit 1
+            fi
             curl -fsS --max-time 30 "$AI_HEALTH_URL"
 
             echo "Checking optional vLLM model server..."
