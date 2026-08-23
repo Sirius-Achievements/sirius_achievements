@@ -168,11 +168,8 @@ pipeline {
             set -e
             ssh -o StrictHostKeyChecking=no "$PC_HOST" "
               set -e
-              compose() {
-                if docker compose version >/dev/null 2>&1; then docker compose \"\$@\"; else docker-compose \"\$@\"; fi
-              }
               cd '$PC_DEPLOY_DIR'
-              AI_IMAGE='$AI_IMAGE' compose -f '$PC_COMPOSE_FILE' build ai_service
+              AI_IMAGE='$AI_IMAGE' docker compose -f '$PC_COMPOSE_FILE' build ai_service
             "
           '''
         }
@@ -189,11 +186,8 @@ pipeline {
             set -e
             ssh -o StrictHostKeyChecking=no "$PC_HOST" "
               set -e
-              compose() {
-                if docker compose version >/dev/null 2>&1; then docker compose \"\$@\"; else docker-compose \"\$@\"; fi
-              }
               cd '$PC_DEPLOY_DIR'
-              AI_IMAGE='$AI_IMAGE' VLLM_MODEL='$VLLM_MODEL' compose -f '$PC_COMPOSE_FILE' up -d db redis minio ai_service vllm
+              AI_IMAGE='$AI_IMAGE' VLLM_MODEL='$VLLM_MODEL' docker compose -f '$PC_COMPOSE_FILE' up -d db redis minio ai_service vllm
             "
           '''
         }
@@ -393,11 +387,8 @@ pipeline {
             if [ -n "$AI_PREV" ]; then
               echo "Rolling back PC ai_service to: $AI_PREV"
               ssh -o StrictHostKeyChecking=no "$PC_HOST" "
-                compose() {
-                  if docker compose version >/dev/null 2>&1; then docker compose \"\$@\"; else docker-compose \"\$@\"; fi
-                }
                 cd '$PC_DEPLOY_DIR'
-                AI_IMAGE='$AI_PREV' compose -f '$PC_COMPOSE_FILE' up -d --no-deps ai_service
+                AI_IMAGE='$AI_PREV' docker compose -f '$PC_COMPOSE_FILE' up -d --no-deps ai_service
               "
             else
               echo "No previous PC AI image found. Skipping PC rollback."
