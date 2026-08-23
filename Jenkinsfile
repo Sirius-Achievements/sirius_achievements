@@ -213,7 +213,16 @@ pipeline {
             curl -fsS --max-time 30 "$AI_HEALTH_URL"
 
             echo "Checking optional vLLM model server..."
-            if curl -fsS --max-time 20 "$VLLM_HEALTH_URL" >/dev/null; then
+            VLLM_READY=false
+            for attempt in $(seq 1 36); do
+              if curl -fsS --max-time 10 "$VLLM_HEALTH_URL" >/dev/null; then
+                VLLM_READY=true
+                break
+              fi
+              echo "vLLM is still starting ($attempt/36)..."
+              sleep 10
+            done
+            if [ "$VLLM_READY" = true ]; then
               if curl -fsS --max-time 30 "$VLLM_MODELS_URL" | grep -F "$VLLM_MODEL" >/dev/null; then
                 echo "Running a real vLLM chat completion smoke test..."
                 if ! curl -fsS --max-time 120 \

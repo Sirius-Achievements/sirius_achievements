@@ -76,7 +76,9 @@ services:
       start_period: 30s
 
   vllm:
-    image: vllm/vllm-openai:latest
+    # Keep CUDA 12.x for the RTX 3080 Ti host (driver 535). The floating
+    # `latest` image moved to CUDA 13 and can no longer initialize this GPU.
+    image: vllm/vllm-openai:v0.6.6.post1
     container_name: sirius_vllm_new
     restart: always
     command:
