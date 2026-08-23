@@ -57,6 +57,8 @@ export function DocumentsPage() {
   const [sortBy, setSortBy] = useState('newest')
   const [dateFrom, setDateFrom] = useState(() => searchParams.get('date_from') ?? '')
   const [dateTo, setDateTo] = useState(() => searchParams.get('date_to') ?? '')
+  const [season, setSeason] = useState(() => searchParams.get('season') ?? 'current')
+  const [availableSeasons, setAvailableSeasons] = useState<string[]>([])
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [isLoading, setIsLoading] = useState(true)
@@ -79,8 +81,9 @@ export function DocumentsPage() {
       sort_by: sortBy,
       date_from: dateFrom || undefined,
       date_to: dateTo || undefined,
+      season,
     }),
-    [categorySel, categoryLogic, dateFrom, dateTo, levelSel, levelLogic, page, query, resultSel, resultLogic, sortBy, statusSel],
+    [categorySel, categoryLogic, dateFrom, dateTo, levelSel, levelLogic, page, query, resultSel, resultLogic, season, sortBy, statusSel],
   )
 
   const toggleIn = (setter: Dispatch<SetStateAction<string[]>>) => (value: string) =>
@@ -97,6 +100,7 @@ export function DocumentsPage() {
       setStatuses(data.statuses)
       setCategories(data.categories)
       setLevels(data.levels)
+      setAvailableSeasons(data.available_seasons ?? [])
     } catch (loadError) {
       setError(getErrorMessage(loadError, 'Не удалось загрузить список документов.'))
     } finally {
@@ -110,7 +114,7 @@ export function DocumentsPage() {
 
   useEffect(() => {
     setPage(1)
-  }, [query, statusSel, categorySel, levelSel, resultSel, sortBy, dateFrom, dateTo])
+  }, [query, statusSel, categorySel, levelSel, resultSel, season, sortBy, dateFrom, dateTo])
 
   useEffect(() => {
     const next = new URLSearchParams()
@@ -119,8 +123,9 @@ export function DocumentsPage() {
     if (categorySel.length === 1) next.set('category', categorySel[0])
     if (dateFrom) next.set('date_from', dateFrom)
     if (dateTo) next.set('date_to', dateTo)
+    if (season !== 'current') next.set('season', season)
     setSearchParams(next, { replace: true })
-  }, [categorySel, dateFrom, dateTo, query, setSearchParams, statusSel])
+  }, [categorySel, dateFrom, dateTo, query, season, setSearchParams, statusSel])
 
   useEffect(() => {
     const trimmed = query.trim()
@@ -131,7 +136,7 @@ export function DocumentsPage() {
 
     const timeoutId = window.setTimeout(async () => {
       try {
-        const { data } = await documentsApi.search(trimmed)
+        const { data } = await documentsApi.search(trimmed, season)
         setSuggestions(data)
       } catch {
         setSuggestions([])
@@ -141,7 +146,7 @@ export function DocumentsPage() {
     return () => {
       window.clearTimeout(timeoutId)
     }
-  }, [query])
+  }, [query, season])
 
   useEffect(() => {
     if (page > totalPages) {
@@ -158,6 +163,7 @@ export function DocumentsPage() {
     setSortBy('newest')
     setDateFrom('')
     setDateTo('')
+    setSeason('current')
     setSuggestions([])
     setPage(1)
   }
@@ -259,6 +265,16 @@ export function DocumentsPage() {
             }}
             className="min-w-[240px] flex-1"
           />
+
+          <div className="w-full sm:w-[180px]">
+            <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Сезон</label>
+            <select value={season} onChange={(event) => setSeason(event.target.value)} className="h-[38px] w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 outline-none transition-all focus:border-indigo-600 focus:bg-surface">
+              <option value="current">Текущий</option>
+              <option value="last2">Последние 2</option>
+              <option value="all">Все сезоны</option>
+              {availableSeasons.map((name) => <option key={name} value={name}>{name}</option>)}
+            </select>
+          </div>
 
           <div className="w-full sm:w-[150px]">
             <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-500">

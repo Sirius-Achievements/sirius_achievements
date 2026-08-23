@@ -117,6 +117,7 @@ export function ProfilePage() {
   const radarChartRef = useRef<HTMLCanvasElement>(null)
   const radarInstanceRef = useRef<Chart | null>(null)
   const [hiddenCats, setHiddenCats] = useState<Set<string>>(new Set())
+  const [analyticsSeason, setAnalyticsSeason] = useState('current')
 
   const isStudent = user?.role === UserRole.STUDENT
 
@@ -145,7 +146,7 @@ export function ProfilePage() {
     setIsLoading(true)
     setError(null)
     try {
-      const { data } = await profileApi.get()
+      const { data } = await profileApi.get(analyticsSeason)
       setProfile(data)
       setFirstName(data.user.first_name)
       setLastName(data.user.last_name)
@@ -167,7 +168,7 @@ export function ProfilePage() {
     } finally {
       setIsLoading(false)
     }
-  }, [revokeAvatarBlobUrl])
+  }, [analyticsSeason, revokeAvatarBlobUrl])
 
   useEffect(() => {
     void load()
@@ -318,16 +319,13 @@ export function ProfilePage() {
     if (!profile || !isStudent || activeTab !== 'analytics' || !radarChartRef.current) return
     const pointsMap: Record<string, number> = {}
     for (const cat of RADAR_CATS) pointsMap[cat] = 0
-    for (const doc of profile.my_docs) {
-      if (doc.status === 'approved' && doc.category && doc.category in pointsMap) {
+    for (const doc of profile.analytics_docs ?? []) {
+      if (doc.category && doc.category in pointsMap) {
         pointsMap[doc.category] = (pointsMap[doc.category] ?? 0) + (doc.points ?? 0)
       }
     }
-    const hasData = RADAR_CATS.some((c) => (pointsMap[c] ?? 0) > 0)
-    if (!hasData) return
-
     const font = { family: "'Inter', system-ui, sans-serif", size: 10 }
-    const maxVal = Math.max(...RADAR_CATS.map((c) => pointsMap[c] ?? 0))
+    const maxVal = Math.max(1, ...RADAR_CATS.map((c) => pointsMap[c] ?? 0))
     const colors = getChartThemeColors(theme)
 
     radarInstanceRef.current?.destroy()
@@ -339,7 +337,7 @@ export function ProfilePage() {
           label: 'Достижения',
           data: RADAR_CATS.map((cat) => {
             const value = pointsMap[cat] ?? 0
-            return hiddenCats.has(cat) || value <= 0 ? null : value
+            return hiddenCats.has(cat) ? null : value
           }),
           borderColor: colors.accent,
           backgroundColor: colors.accentSoft,
@@ -350,8 +348,8 @@ export function ProfilePage() {
           pointBackgroundColor: colors.accentStrong,
           pointBorderColor: colors.pointBackground,
           pointBorderWidth: 1,
-          pointRadius: RADAR_CATS.map((cat) => !hiddenCats.has(cat) && (pointsMap[cat] ?? 0) > 0 ? 3 : 0),
-          pointHoverRadius: RADAR_CATS.map((cat) => !hiddenCats.has(cat) && (pointsMap[cat] ?? 0) > 0 ? 5 : 0),
+          pointRadius: RADAR_CATS.map((cat) => !hiddenCats.has(cat) ? 3 : 0),
+          pointHoverRadius: RADAR_CATS.map((cat) => !hiddenCats.has(cat) ? 5 : 0),
         }],
       },
       options: {
@@ -792,16 +790,15 @@ export function ProfilePage() {
                 {isStudent ? (
                   <fieldset className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                     <legend className="px-1 text-[11px] font-bold uppercase tracking-wider text-slate-500">Что видно в публичном профиле</legend>
-                    <p className="mb-3 text-xs text-slate-400">Имя остаётся публичным, остальные блоки можно скрыть отдельно.</p>
+                    <p className="mb-3 text-xs text-slate-400">Имя, уровень обучения, курс и учебная группа видны всегда. Остальные блоки настраиваются отдельно.</p>
                     <div className="grid gap-2 sm:grid-cols-2">
                       {[
                         ['avatar', 'Фотография'],
-                        ['education', 'Уровень обучения и курс'],
-                        ['group', 'Учебная группа'],
                         ['score', 'Баллы и позиция в рейтинге'],
+                        ['hall_of_fame', 'Зал славы и прошлые сезоны'],
                         ['gpa', 'Средний балл и бонус'],
                         ['analytics', 'Графики и направления'],
-                        ['achievements', 'Лента достижений'],
+                        ['achievements', 'Портрет достижений'],
                         ['resume', 'AI-сводка'],
                       ].map(([key, label]) => (
                         <label key={key} className="flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-slate-200 bg-surface px-3 py-2 text-sm text-slate-700">
@@ -815,6 +812,9 @@ export function ProfilePage() {
                         </label>
                       ))}
                     </div>
+                    {publicVisibility.analytics !== false && publicVisibility.score === false ? (
+                      <p className="mt-3 rounded-lg border border-slate-200 bg-surface px-3 py-2 text-xs text-slate-500">Графики останутся видимыми, но значения баллов будут заменены нулями.</p>
+                    ) : null}
                   </fieldset>
                 ) : null}
                 <div className="pt-2">
@@ -1089,8 +1089,14 @@ export function ProfilePage() {
       {activeTab === 'analytics' && isStudent && (
         <div className="max-w-5xl mx-auto mt-6">
           <div className="bg-surface rounded-xl border border-slate-200 p-5">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
               <h3 className="text-sm font-semibold text-slate-700">Динамика достижений</h3>
+              <select value={analyticsSeason} onChange={(event) => setAnalyticsSeason(event.target.value)} className="rounded-lg border border-slate-200 bg-surface px-3 py-1.5 text-xs text-slate-700 outline-none">
+                <option value="current">Текущий сезон</option>
+                <option value="last2">Последние 2 сезона</option>
+                <option value="all">Все сезоны</option>
+                {profile.available_seasons.map((name) => <option key={name} value={name}>{name}</option>)}
+              </select>
               {profile.user.session_gpa && (
                 <span className="text-xs text-slate-500 bg-slate-50 px-2.5 py-1 rounded-full">
                   GPA: <span className="font-semibold text-slate-700">{profile.user.session_gpa}</span> &middot; бонус +{profile.gpa_bonus}
@@ -1109,15 +1115,15 @@ export function ProfilePage() {
       )}
 
       {/* ===== RADAR CHART (students only) ===== */}
-      {activeTab === 'analytics' && isStudent && profile.my_docs.some((d) => d.status === 'approved') && (() => {
+      {activeTab === 'analytics' && isStudent && (() => {
         const pointsMap: Record<string, number> = {}
         for (const cat of RADAR_CATS) pointsMap[cat] = 0
-        for (const doc of profile.my_docs) {
-          if (doc.status === 'approved' && doc.category && doc.category in pointsMap) {
+        for (const doc of profile.analytics_docs ?? []) {
+          if (doc.category && doc.category in pointsMap) {
             pointsMap[doc.category] = (pointsMap[doc.category] ?? 0) + (doc.points ?? 0)
           }
         }
-        const activeCats = RADAR_CATS.filter((c) => (pointsMap[c] ?? 0) > 0)
+        const activeCats = RADAR_CATS
         return (
           <div className="max-w-5xl mx-auto mt-6">
             <div className="bg-surface rounded-xl border border-slate-200 p-5">

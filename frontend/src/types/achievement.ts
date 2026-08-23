@@ -18,6 +18,8 @@ export interface Achievement {
   points: number
   status: AchievementStatus
   rejection_reason?: string
+  archived_season?: string | null
+  archived_from_status?: string | null
   moderator_id?: number
   created_at: string
   updated_at: string
@@ -35,6 +37,8 @@ export interface AchievementListResponse {
   achievements: Achievement[]
   page: number
   total_pages: number
+  selected_season?: string
+  available_seasons?: string[]
 }
 
 export interface ModerationAchievementsResponse {

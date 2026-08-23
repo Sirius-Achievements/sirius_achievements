@@ -100,6 +100,8 @@ def serialize_achievement(achievement):
         'points': int(achievement.points or 0),
         'status': _enum_value(achievement.status),
         'rejection_reason': achievement.rejection_reason,
+        'archived_season': getattr(achievement, 'archived_season', None),
+        'archived_from_status': getattr(achievement, 'archived_from_status', None),
         'moderator_id': achievement.moderator_id,
         'created_at': _iso(achievement.created_at),
         'updated_at': _iso(achievement.updated_at),

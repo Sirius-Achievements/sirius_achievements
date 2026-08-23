@@ -7,7 +7,7 @@ from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, status
 from fastapi.responses import Response
-from sqlalchemy import desc, func, select, update
+from sqlalchemy import case, desc, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.database import get_db
@@ -453,10 +453,24 @@ async def end_season(
         if points and int(points) > 0:
             db.add(SeasonResult(user_id=user_id, season_name=season_name, points=int(points), rank=rank))
 
+    # Closing a season freezes every document that belonged to it.  Pending,
+    # rejected and revision documents must not leak into the next moderation
+    # queue, while archived_from_status keeps their original decision intact.
+    original_status = case(
+        (Achievement.status == AchievementStatus.APPROVED, AchievementStatus.APPROVED.value),
+        (Achievement.status == AchievementStatus.REJECTED, AchievementStatus.REJECTED.value),
+        (Achievement.status == AchievementStatus.REVISION, AchievementStatus.REVISION.value),
+        else_=AchievementStatus.PENDING.value,
+    )
     await db.execute(
         update(Achievement)
-        .where(Achievement.status == AchievementStatus.APPROVED)
-        .values(status=AchievementStatus.ARCHIVED)
+        .where(Achievement.status != AchievementStatus.ARCHIVED)
+        .values(
+            status=AchievementStatus.ARCHIVED,
+            archived_season=season_name,
+            archived_from_status=original_status,
+            moderator_id=None,
+        )
     )
     await db.execute(
         update(Users)

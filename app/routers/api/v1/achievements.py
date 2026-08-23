@@ -59,12 +59,32 @@ async def list_achievements(
     level: str | None = Query(None),
     result_value: str | None = Query(None, alias='result'),
     sort_by: str = Query('newest'),
+    season: str = Query('current', max_length=100),
     current_user=Depends(auth),
     db: AsyncSession = Depends(get_db),
 ):
     _ensure_account_not_deleted(current_user)
 
     stmt = select(Achievement).filter(Achievement.user_id == current_user.id)
+
+    archived_names = list((await db.execute(
+        select(Achievement.archived_season)
+        .filter(Achievement.user_id == current_user.id, Achievement.archived_season.is_not(None))
+        .distinct()
+        .order_by(Achievement.archived_season.desc())
+    )).scalars().all())
+    if season == 'current':
+        stmt = stmt.filter(Achievement.status != AchievementStatus.ARCHIVED)
+    elif season == 'last2':
+        previous = archived_names[:1]
+        stmt = stmt.filter(or_(
+            Achievement.status != AchievementStatus.ARCHIVED,
+            Achievement.archived_season.in_(previous),
+        ))
+    elif season != 'all':
+        if season not in archived_names:
+            raise HTTPException(status_code=422, detail='Неизвестный сезон.')
+        stmt = stmt.filter(Achievement.status == AchievementStatus.ARCHIVED, Achievement.archived_season == season)
 
     if query:
         like_term = f"%{escape_like(query)}%"
@@ -112,12 +132,15 @@ async def list_achievements(
         'achievements': [serialize_achievement(item) for item in achievements],
         'page': page,
         'total_pages': max(1, ceil(total_items / PAGE_SIZE)),
+        'selected_season': season,
+        'available_seasons': archived_names,
     }
 
 
 @router.get('/search')
 async def search_achievements(
     q: str = Query(..., min_length=1),
+    season: str = Query('current', max_length=100),
     current_user=Depends(auth),
     db: AsyncSession = Depends(get_db),
 ):
@@ -130,6 +153,19 @@ async def search_achievements(
         .filter(or_(Achievement.title.ilike(like_term), Achievement.description.ilike(like_term)))
         .limit(5)
     )
+    if season == 'current':
+        stmt = stmt.filter(Achievement.status != AchievementStatus.ARCHIVED)
+    elif season == 'last2':
+        previous = list((await db.execute(
+            select(Achievement.archived_season)
+            .filter(Achievement.user_id == current_user.id, Achievement.archived_season.is_not(None))
+            .distinct()
+            .order_by(Achievement.archived_season.desc())
+            .limit(1)
+        )).scalars().all())
+        stmt = stmt.filter(or_(Achievement.status != AchievementStatus.ARCHIVED, Achievement.archived_season.in_(previous)))
+    elif season != 'all' and season != 'last2':
+        stmt = stmt.filter(Achievement.status == AchievementStatus.ARCHIVED, Achievement.archived_season == season)
     result = await db.execute(stmt)
     achievements = result.scalars().all()
     return [{'value': item.title, 'text': item.title} for item in achievements]

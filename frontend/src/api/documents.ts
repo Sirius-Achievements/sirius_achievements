@@ -18,6 +18,7 @@ export interface DocumentsParams {
   sort_by?: string
   date_from?: string
   date_to?: string
+  season?: string
 }
 
 export interface DocumentsResponse {
@@ -29,6 +30,8 @@ export interface DocumentsResponse {
   categories: string[]
   levels: string[]
   results?: string[]
+  selected_season?: string
+  available_seasons?: string[]
 }
 
 export const documentsApi = {
@@ -36,8 +39,8 @@ export const documentsApi = {
     return client.get<DocumentsResponse>('/documents', { params })
   },
 
-  search(q: string) {
-    return client.get<Array<{ value: string; text: string }>>('/documents/search', { params: { q } })
+  search(q: string, season = 'current') {
+    return client.get<Array<{ value: string; text: string }>>('/documents/search', { params: { q, season } })
   },
 
   preview(id: number) {

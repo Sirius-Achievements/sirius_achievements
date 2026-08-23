@@ -4,10 +4,10 @@ import re
 import json
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
 import jwt as pyjwt
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -50,13 +50,12 @@ _EMOJI_RE = re.compile(
 
 PUBLIC_VISIBILITY_DEFAULTS = {
     'avatar': True,
-    'education': True,
-    'group': True,
     'gpa': True,
     'analytics': True,
     'achievements': True,
     'resume': True,
     'score': True,
+    'hall_of_fame': True,
 }
 
 
@@ -117,12 +116,38 @@ def _ensure_account_not_deleted(current_user) -> None:
 
 @router.get('')
 @router.get('/')
-async def profile(current_user=Depends(auth), db: AsyncSession = Depends(get_db)):
+async def profile(
+    season: str = Query(default='current', max_length=100),
+    current_user=Depends(auth),
+    db: AsyncSession = Depends(get_db),
+):
     _ensure_account_not_deleted(current_user)
 
     user = current_user
     resume_service = ResumeService(db)
     check = await resume_service.can_generate(user.id)
+    season_history = await load_season_history(db, user.id)
+    archived_approved = and_(
+        Achievement.status == AchievementStatus.ARCHIVED,
+        or_(
+            Achievement.archived_from_status == AchievementStatus.APPROVED.value,
+            Achievement.archived_from_status.is_(None),
+        ),
+    )
+    if season == 'current':
+        analytics_filter = Achievement.status == AchievementStatus.APPROVED
+    elif season == 'all':
+        analytics_filter = or_(Achievement.status == AchievementStatus.APPROVED, archived_approved)
+    elif season == 'last2':
+        previous = [item.season_name for item in season_history[:1]]
+        analytics_filter = or_(
+            Achievement.status == AchievementStatus.APPROVED,
+            and_(archived_approved, Achievement.archived_season.in_(previous)),
+        )
+    else:
+        if season not in {item.season_name for item in season_history}:
+            raise HTTPException(status_code=422, detail='Неизвестный сезон.')
+        analytics_filter = and_(archived_approved, Achievement.archived_season == season)
 
     approved_rows = (await db.execute(
         select(
@@ -130,7 +155,7 @@ async def profile(current_user=Depends(auth), db: AsyncSession = Depends(get_db)
             func.count().label('cnt'),
             func.coalesce(func.sum(Achievement.points), 0).label('pts'),
         )
-        .filter(Achievement.user_id == user.id, Achievement.status == AchievementStatus.APPROVED)
+        .filter(Achievement.user_id == user.id, analytics_filter)
         .group_by('bucket')
         .order_by('bucket')
     )).all()
@@ -140,7 +165,7 @@ async def profile(current_user=Depends(auth), db: AsyncSession = Depends(get_db)
             func.date_trunc('month', Achievement.created_at).label('bucket'),
             func.count().label('cnt'),
         )
-        .filter(Achievement.user_id == user.id)
+        .filter(Achievement.user_id == user.id, analytics_filter)
         .group_by('bucket')
         .order_by('bucket')
     )).all()
@@ -156,6 +181,9 @@ async def profile(current_user=Depends(auth), db: AsyncSession = Depends(get_db)
         all_months[key]['uploads'] = int(row.cnt or 0)
 
     sorted_months = sorted(all_months.items(), key=lambda item: item[1]['sort'])
+    if not sorted_months:
+        now = datetime.now(UTC)
+        sorted_months = [(now.strftime('%m.%Y'), {'points': 0, 'uploads': 0, 'sort': now})]
     cumulative = []
     running = 0
     for _, item in sorted_months:
@@ -175,7 +203,11 @@ async def profile(current_user=Depends(auth), db: AsyncSession = Depends(get_db)
         .limit(10)
     )).scalars().all()
 
-    season_history = await load_season_history(db, user.id)
+    analytics_docs = (await db.execute(
+        select(Achievement)
+        .filter(Achievement.user_id == user.id, analytics_filter)
+        .order_by(Achievement.created_at.desc())
+    )).scalars().all()
 
     completed_fields = [
         bool(user.first_name),
@@ -197,9 +229,13 @@ async def profile(current_user=Depends(auth), db: AsyncSession = Depends(get_db)
         'chart_cumulative': cumulative,
         'has_chart_data': bool(sorted_months),
         'my_docs': [serialize_achievement(item) for item in docs],
+        'analytics_docs': [serialize_achievement(item) for item in analytics_docs],
         'gpa_bonus': calculate_gpa_bonus(user.session_gpa),
         'profile_completion': round(sum(completed_fields) / len(completed_fields) * 100),
-        'public_visibility': {**PUBLIC_VISIBILITY_DEFAULTS, **(user.public_visibility or {})},
+        'public_visibility': {
+            key: bool((user.public_visibility or {}).get(key, default))
+            for key, default in PUBLIC_VISIBILITY_DEFAULTS.items()
+        },
         'season_history': [
             {
                 'id': item.id,
@@ -210,6 +246,8 @@ async def profile(current_user=Depends(auth), db: AsyncSession = Depends(get_db)
             }
             for item in season_history
         ],
+        'selected_season': season,
+        'available_seasons': [item.season_name for item in season_history],
         'resume_versions': [
             {
                 'id': item.id,

@@ -38,13 +38,16 @@ export interface PublicStudentResponse {
   category_breakdown: Array<{
     category: string
     count: number
+    points: number
   }>
+  selected_season: string
+  available_seasons: string[]
   public_url: string
   public_visibility?: Record<string, boolean>
 }
 
 export const publicApi = {
-  getStudent(studentId: number) {
-    return client.get<PublicStudentResponse>(`/public/students/${studentId}`)
+  getStudent(studentId: number, season = 'current') {
+    return client.get<PublicStudentResponse>(`/public/students/${studentId}`, { params: { season } })
   },
 }

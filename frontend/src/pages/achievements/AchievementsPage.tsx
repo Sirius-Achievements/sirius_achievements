@@ -167,6 +167,8 @@ export function AchievementsPage() {
   const [level, setLevel] = useState('')
   const [result, setResult] = useState('')
   const [sortBy, setSortBy] = useState('newest')
+  const [season, setSeason] = useState('current')
+  const [availableSeasons, setAvailableSeasons] = useState<string[]>([])
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [isLoading, setIsLoading] = useState(true)
@@ -200,8 +202,9 @@ export function AchievementsPage() {
       level: level || undefined,
       result: result || undefined,
       sort_by: sortBy,
+      season,
     }),
-    [category, level, page, query, result, sortBy, status]
+    [category, level, page, query, result, season, sortBy, status]
   )
 
   const loadItems = async () => {
@@ -212,6 +215,7 @@ export function AchievementsPage() {
       const { data } = await achievementsApi.list(filters)
       setItems(data.achievements)
       setTotalPages(data.total_pages)
+      setAvailableSeasons(data.available_seasons ?? [])
     } catch (loadError) {
       setError(getErrorMessage(loadError, 'Не удалось загрузить достижения.'))
     } finally {
@@ -225,7 +229,7 @@ export function AchievementsPage() {
 
   useEffect(() => {
     setPage(1)
-  }, [query, status, category, level, result, sortBy])
+  }, [query, status, category, level, result, season, sortBy])
 
   useEffect(() => {
     const trimmed = query.trim()
@@ -236,7 +240,7 @@ export function AchievementsPage() {
 
     const timeoutId = window.setTimeout(async () => {
       try {
-        const { data } = await achievementsApi.search(trimmed)
+        const { data } = await achievementsApi.search(trimmed, season)
         setSuggestions(data)
       } catch {
         setSuggestions([])
@@ -246,7 +250,7 @@ export function AchievementsPage() {
     return () => {
       window.clearTimeout(timeoutId)
     }
-  }, [query])
+  }, [query, season])
 
   useEffect(() => {
     if (!showCreateModal || pointRules) return
@@ -536,6 +540,19 @@ export function AchievementsPage() {
                 ))}
               </ul>
             ) : null}
+          </div>
+          <div className="w-[calc(50%-0.375rem)] sm:w-[170px]">
+            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5 tracking-wider">Сезон</label>
+            <select
+              value={season}
+              onChange={(event) => setSeason(event.target.value)}
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-700 focus:bg-surface focus:border-indigo-600 outline-none h-[38px]"
+            >
+              <option value="current">Текущий</option>
+              <option value="last2">Последние 2</option>
+              <option value="all">Все сезоны</option>
+              {availableSeasons.map((name) => <option key={name} value={name}>{name}</option>)}
+            </select>
           </div>
           <div className="w-[calc(50%-0.375rem)] sm:w-[130px]">
             <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5 tracking-wider">Статус</label>

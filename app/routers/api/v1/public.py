@@ -1,8 +1,10 @@
 ﻿from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse, StreamingResponse
-from sqlalchemy import desc, func, select
+from sqlalchemy import and_, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -24,14 +26,22 @@ router = APIRouter(prefix='/api/v1/public', tags=['api.v1.public'])
 _STAFF_ROLES = (UserRole.MODERATOR, UserRole.SUPER_ADMIN)
 _VISIBILITY_DEFAULTS = {
     'avatar': True,
-    'education': True,
-    'group': True,
     'gpa': True,
     'analytics': True,
     'achievements': True,
     'resume': True,
     'score': True,
+    'hall_of_fame': True,
 }
+
+
+def _approved_archive_filter():
+    """Public analytics may use only documents approved before archiving."""
+    return or_(
+        Achievement.archived_from_status == AchievementStatus.APPROVED.value,
+        # Releases before archived_from_status existed archived approved rows only.
+        Achievement.archived_from_status.is_(None),
+    )
 
 async def _enforce_public_rate_limit(request: Request, bucket: str) -> None:
     client_ip = request.client.host if request.client else 'unknown'
@@ -56,6 +66,7 @@ def _can_view_documents(viewer: Users | None, student_id: int) -> bool:
 async def public_student_profile(
     student_id: int,
     request: Request,
+    season: str = Query(default='current', max_length=100),
     db: AsyncSession = Depends(get_db),
     viewer: Users | None = Depends(auth_optional),
 ):
@@ -64,16 +75,45 @@ async def public_student_profile(
     if not student or student.role != UserRole.STUDENT or student.status != UserStatus.ACTIVE:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Student not found.')
 
-    achievements_stmt = (
+    current_achievements_stmt = (
         select(Achievement)
         .filter(Achievement.user_id == student_id, Achievement.status == AchievementStatus.APPROVED)
         .order_by(Achievement.created_at.desc())
     )
-    achievements = (await db.execute(achievements_stmt)).scalars().all()
+    current_achievements = (await db.execute(current_achievements_stmt)).scalars().all()
     season_history = await load_season_history(db, student_id)
 
+    season = (season or 'current').strip()
+    archived_approved = and_(
+        Achievement.status == AchievementStatus.ARCHIVED,
+        _approved_archive_filter(),
+    )
+    selected_names: list[str] = []
+    if season == 'current':
+        selected_filter = Achievement.status == AchievementStatus.APPROVED
+    elif season == 'all':
+        selected_filter = or_(Achievement.status == AchievementStatus.APPROVED, archived_approved)
+    elif season == 'last2':
+        selected_names = [item.season_name for item in season_history[:1]]
+        selected_filter = or_(
+            Achievement.status == AchievementStatus.APPROVED,
+            and_(archived_approved, Achievement.archived_season.in_(selected_names)),
+        )
+    else:
+        known_names = {item.season_name for item in season_history}
+        if season not in known_names:
+            raise HTTPException(status_code=422, detail='Неизвестный сезон.')
+        selected_filter = and_(archived_approved, Achievement.archived_season == season)
+
+    achievements_stmt = (
+        select(Achievement)
+        .filter(Achievement.user_id == student_id, selected_filter)
+        .order_by(Achievement.created_at.desc())
+    )
+    achievements = (await db.execute(achievements_stmt)).scalars().all()
+
     gpa_bonus = calculate_gpa_bonus(student.session_gpa)
-    total_points = sum(int(item.points or 0) for item in achievements) + gpa_bonus
+    total_points = sum(int(item.points or 0) for item in current_achievements) + gpa_bonus
 
     achievement_points = func.coalesce(func.sum(Achievement.points), 0)
     total_points_expr = (
@@ -124,7 +164,7 @@ async def public_student_profile(
                 func.count().label('count'),
                 func.coalesce(func.sum(Achievement.points), 0).label('points'),
             )
-            .filter(Achievement.user_id == student_id, Achievement.status == AchievementStatus.APPROVED)
+            .filter(Achievement.user_id == student_id, selected_filter)
             .group_by('bucket')
             .order_by('bucket')
         )
@@ -135,7 +175,7 @@ async def public_student_profile(
                 func.date_trunc('month', Achievement.created_at).label('bucket'),
                 func.count().label('count'),
             )
-            .filter(Achievement.user_id == student_id)
+            .filter(Achievement.user_id == student_id, selected_filter)
             .group_by('bucket')
             .order_by('bucket')
         )
@@ -156,6 +196,9 @@ async def public_student_profile(
         all_months[key]['uploads'] = int(row.count or 0)
 
     sorted_months = sorted(all_months.items(), key=lambda item: item[1]['sort'])
+    if not sorted_months:
+        now = datetime.now()
+        sorted_months = [(now.strftime('%m.%Y'), {'points': 0, 'uploads': 0, 'sort': now})]
     chart_labels = [item[0] for item in sorted_months]
     chart_points = [int(item[1]['points']) for item in sorted_months]
     chart_uploads = [int(item[1]['uploads']) for item in sorted_months]
@@ -165,16 +208,23 @@ async def public_student_profile(
         running_total += points
         chart_cumulative.append(running_total)
 
-    category_breakdown: dict[str, int] = {}
+    category_breakdown: dict[str, dict[str, int]] = {}
     for achievement in achievements:
         category = achievement.category.value if getattr(achievement, 'category', None) else 'Other'
-        category_breakdown[category] = category_breakdown.get(category, 0) + 1
+        entry = category_breakdown.setdefault(category, {'count': 0, 'points': 0})
+        entry['count'] += 1
+        entry['points'] += int(achievement.points or 0)
 
     can_view_docs = _can_view_documents(viewer, student_id)
-    visibility = {**_VISIBILITY_DEFAULTS, **(student.public_visibility or {})}
+    visibility = {
+        key: bool((student.public_visibility or {}).get(key, default))
+        for key, default in _VISIBILITY_DEFAULTS.items()
+    }
     achievements_payload = []
     for achievement in achievements if visibility['achievements'] else []:
         item = serialize_achievement(achievement)
+        if not visibility['score']:
+            item['points'] = 0
         item['preview_url'] = (
             f'/api/v1/public/students/{student_id}/documents/{achievement.id}/preview'
             if achievement.file_path and can_view_docs else None
@@ -184,11 +234,6 @@ async def public_student_profile(
     student_payload = serialize_user_public(student)
     if not visibility['avatar']:
         student_payload['avatar_path'] = None
-    if not visibility['education']:
-        student_payload['education_level'] = None
-        student_payload['course'] = None
-    if not visibility['group']:
-        student_payload['study_group'] = None
     if not visibility['gpa']:
         student_payload['session_gpa'] = None
     student_payload['resume_text'] = student.resume_text if visibility['resume'] else None
@@ -213,17 +258,23 @@ async def public_student_profile(
                 'created_at': item.created_at.isoformat() if item.created_at else None,
             }
             for item in season_history
-        ] if visibility['score'] else [],
+        ] if visibility['hall_of_fame'] else [],
         'chart_labels': chart_labels if visibility['analytics'] else [],
-        'chart_points': chart_points if visibility['analytics'] else [],
+        'chart_points': chart_points if visibility['analytics'] and visibility['score'] else ([0] * len(chart_labels) if visibility['analytics'] else []),
         'chart_uploads': chart_uploads if visibility['analytics'] else [],
-        'chart_cumulative': chart_cumulative if visibility['analytics'] else [],
+        'chart_cumulative': chart_cumulative if visibility['analytics'] and visibility['score'] else ([0] * len(chart_labels) if visibility['analytics'] else []),
         'has_chart_data': bool(chart_labels) and visibility['analytics'],
         'category_breakdown': [
-            {'category': category, 'count': count}
-            for category, count in sorted(category_breakdown.items(), key=lambda item: (-item[1], item[0]))
+            {
+                'category': category,
+                'count': values['count'],
+                'points': values['points'] if visibility['score'] else 0,
+            }
+            for category, values in sorted(category_breakdown.items(), key=lambda item: (-item[1]['count'], item[0]))
         ] if visibility['analytics'] else [],
         'public_visibility': visibility,
+        'selected_season': season,
+        'available_seasons': [item.season_name for item in season_history],
         'public_url': f'/sirius.achievements/app/students/{student_id}',
     }
 
@@ -249,7 +300,13 @@ async def public_document_preview(
     if (
         not achievement
         or achievement.user_id != student_id
-        or achievement.status != AchievementStatus.APPROVED
+        or not (
+            achievement.status == AchievementStatus.APPROVED
+            or (
+                achievement.status == AchievementStatus.ARCHIVED
+                and (achievement.archived_from_status in {None, AchievementStatus.APPROVED.value})
+            )
+        )
         or not achievement.file_path
     ):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Document not found.')

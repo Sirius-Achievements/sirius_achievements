@@ -9,6 +9,7 @@ export interface AchievementsParams {
   level?: string
   result?: string
   sort_by?: string
+  season?: string
 }
 
 export const achievementsApi = {
@@ -32,7 +33,7 @@ export const achievementsApi = {
     return client.delete<{ success: boolean; action?: 'archived' | 'deleted' }>(`/achievements/${id}`)
   },
 
-  search(q: string) {
-    return client.get<Array<{ value: string; text: string }>>('/achievements/search', { params: { q } })
+  search(q: string, season = 'current') {
+    return client.get<Array<{ value: string; text: string }>>('/achievements/search', { params: { q, season } })
   },
 }

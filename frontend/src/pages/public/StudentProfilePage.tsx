@@ -1,4 +1,4 @@
-import { Component, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Component, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import Chart from 'chart.js/auto'
 
@@ -37,21 +37,6 @@ function isPdf(url?: string | null) {
 
 const RADAR_CATS = ['Спорт', 'Наука', 'Искусство', 'Волонтёрство', 'Хакатон', 'Патриотизм', 'Проекты', 'Другое']
 
-type AnalyticsPeriod = 'all' | 'year' | 'season'
-
-function periodStart(period: AnalyticsPeriod) {
-  if (period === 'all') return null
-  const now = new Date()
-  if (period === 'year') return new Date(now.getFullYear() - 1, now.getMonth(), 1)
-  if (now.getMonth() >= 8) return new Date(now.getFullYear(), 8, 1)
-  if (now.getMonth() >= 1) return new Date(now.getFullYear(), 1, 1)
-  return new Date(now.getFullYear() - 1, 8, 1)
-}
-
-function monthLabelToDate(label: string) {
-  const [month, year] = label.split('.').map(Number)
-  return new Date(year, Math.max(0, month - 1), 1)
-}
 function StudentProfilePageInner() {
   const { id } = useParams<{ id: string }>()
   const studentId = Number(id)
@@ -73,14 +58,8 @@ function StudentProfilePageInner() {
   const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [hiddenCats, setHiddenCats] = useState<Set<string>>(new Set())
-  const [analyticsPeriod, setAnalyticsPeriod] = useState<AnalyticsPeriod>('all')
+  const [seasonScope, setSeasonScope] = useState('current')
   const [linkCopied, setLinkCopied] = useState(false)
-
-  const periodAchievements = useMemo(() => {
-    const start = periodStart(analyticsPeriod)
-    if (!start) return data?.achievements ?? []
-    return (data?.achievements ?? []).filter((item) => item.created_at && new Date(item.created_at) >= start)
-  }, [analyticsPeriod, data?.achievements])
 
   useEffect(() => {
     if (!previewUrl) {
@@ -121,7 +100,7 @@ function StudentProfilePageInner() {
       setIsLoading(true)
       setError(null)
       try {
-        const response = await publicApi.getStudent(studentId)
+        const response = await publicApi.getStudent(studentId, seasonScope)
         setData(response.data)
       } catch (loadError) {
         setError(getErrorMessage(loadError, 'Не удалось загрузить публичный профиль.'))
@@ -130,7 +109,7 @@ function StudentProfilePageInner() {
       }
     }
     void load()
-  }, [studentId])
+  }, [seasonScope, studentId])
 
   useEffect(() => {
     if (!data) return
@@ -151,11 +130,8 @@ function StudentProfilePageInner() {
 
     // Progress chart
     if (progressChartRef.current && data.chart_labels?.length) {
-      const start = periodStart(analyticsPeriod)
       const visibleIndexes = data.chart_labels
-        .map((label, index) => ({ index, date: monthLabelToDate(label) }))
-        .filter((item) => !start || item.date >= start)
-        .map((item) => item.index)
+        .map((_label, index) => index)
       const labels = visibleIndexes.map((index) => data.chart_labels[index])
       const cumulativeBase = visibleIndexes.length ? (data.chart_cumulative[visibleIndexes[0] - 1] ?? 0) : 0
       progressInstanceRef.current?.destroy()
@@ -234,21 +210,21 @@ function StudentProfilePageInner() {
       progressInstanceRef.current?.destroy()
       progressInstanceRef.current = null
     }
-  }, [analyticsPeriod, data, theme])
+  }, [data, theme])
 
   // Radar chart — rebuild when data or hiddenCats changes
   useEffect(() => {
-    if (!radarChartRef.current || !periodAchievements.length) return
+    if (!data || !radarChartRef.current || data.public_visibility?.analytics === false) return
+    const profileData = data
     const colors = getChartThemeColors(theme)
     const pointsMap: Record<string, number> = {}
     for (const cat of RADAR_CATS) pointsMap[cat] = 0
-    for (const a of periodAchievements) {
-      if (a.category && a.category in pointsMap) {
-        pointsMap[a.category] = (pointsMap[a.category] ?? 0) + (a.points ?? 0)
+    for (const item of profileData.category_breakdown ?? []) {
+      if (item.category in pointsMap) {
+        pointsMap[item.category] = item.points ?? 0
       }
     }
-    if (!RADAR_CATS.some((c) => (pointsMap[c] ?? 0) > 0)) return
-    const maxVal = Math.max(...RADAR_CATS.map((c) => pointsMap[c] ?? 0))
+    const maxVal = Math.max(1, ...RADAR_CATS.map((c) => pointsMap[c] ?? 0))
     const font = { family: "'Inter', system-ui, sans-serif", size: 10 }
 
     radarInstanceRef.current?.destroy()
@@ -260,7 +236,7 @@ function StudentProfilePageInner() {
           label: 'Достижения',
           data: RADAR_CATS.map((cat) => {
             const value = pointsMap[cat] ?? 0
-            return hiddenCats.has(cat) || value <= 0 ? null : value
+            return hiddenCats.has(cat) ? null : value
           }),
           borderColor: colors.accent,
           backgroundColor: colors.accentSoft,
@@ -271,8 +247,8 @@ function StudentProfilePageInner() {
           pointBackgroundColor: colors.accentStrong,
           pointBorderColor: colors.pointBackground,
           pointBorderWidth: 1,
-          pointRadius: RADAR_CATS.map((cat) => !hiddenCats.has(cat) && (pointsMap[cat] ?? 0) > 0 ? 3 : 0),
-          pointHoverRadius: RADAR_CATS.map((cat) => !hiddenCats.has(cat) && (pointsMap[cat] ?? 0) > 0 ? 5 : 0),
+          pointRadius: RADAR_CATS.map((cat) => !hiddenCats.has(cat) ? 3 : 0),
+          pointHoverRadius: RADAR_CATS.map((cat) => !hiddenCats.has(cat) ? 5 : 0),
         }],
       },
       options: {
@@ -286,7 +262,7 @@ function StudentProfilePageInner() {
             bodyFont: font,
             padding: 10,
             cornerRadius: 8,
-            callbacks: { label: (ctx) => ctx.parsed.r > 0 ? ` ${ctx.label}: ${ctx.parsed.r} б.` : '' },
+            callbacks: { label: (ctx) => profileData.public_visibility?.score === false ? ` ${ctx.label}` : ` ${ctx.label}: ${ctx.parsed.r} б.` },
           },
         },
         scales: {
@@ -304,7 +280,7 @@ function StudentProfilePageInner() {
       radarInstanceRef.current?.destroy()
       radarInstanceRef.current = null
     }
-  }, [data, hiddenCats, periodAchievements, theme])
+  }, [data, hiddenCats, theme])
 
   const handleBack = () => {
     if (window.history.length > 1) {
@@ -324,10 +300,9 @@ function StudentProfilePageInner() {
   if (isLoading) return <div className="py-16"><LoadingSpinner /></div>
   if (!data) return null
 
-  const activePeriodStart = periodStart(analyticsPeriod)
-  const hasChartData = Boolean(data.chart_labels?.some((label) => !activePeriodStart || monthLabelToDate(label) >= activePeriodStart))
+  const hasChartData = data.public_visibility?.analytics !== false && Boolean(data.chart_labels?.length)
   const catStats = data.category_breakdown ?? []
-  const topCategories = catStats.slice(0, 4)
+  const topCategories = catStats.filter((item) => item.count > 0).slice(0, 4)
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8">
@@ -464,15 +439,19 @@ function StudentProfilePageInner() {
           </section>
         ) : null}
 
-        {(hasChartData || data.achievements?.length) ? (
+        {data.public_visibility?.analytics !== false ? (
           <section className="bg-surface rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
               <div><h3 className="text-sm font-semibold text-slate-700">Аналитика достижений</h3><p className="mt-0.5 text-xs text-slate-400">Динамика баллов и распределение по направлениям</p></div>
-              <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-[11px] font-semibold">
-                {([['all', 'Всё время'], ['year', 'Год'], ['season', 'Сезон']] as const).map(([value, label]) => (
-                  <button key={value} type="button" onClick={() => setAnalyticsPeriod(value)} className={`rounded-md px-2.5 py-1.5 ${analyticsPeriod === value ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>{label}</button>
-                ))}
-              </div>
+              <label className="flex items-center gap-2 text-[11px] font-semibold text-slate-500">
+                Период
+                <select value={seasonScope} onChange={(event) => setSeasonScope(event.target.value)} className="rounded-lg border border-slate-200 bg-surface px-2.5 py-1.5 text-xs text-slate-700 outline-none">
+                  <option value="current">Текущий сезон</option>
+                  <option value="last2">Последние 2 сезона</option>
+                  <option value="all">Все сезоны</option>
+                  {data.available_seasons.map((name) => <option key={name} value={name}>{name}</option>)}
+                </select>
+              </label>
             </div>
             <div className="grid gap-4 p-4 lg:grid-cols-2">
               {hasChartData ? (
@@ -481,16 +460,15 @@ function StudentProfilePageInner() {
                   <div className="h-56 w-full"><canvas ref={progressChartRef} /></div>
                 </div>
               ) : null}
-              {periodAchievements.length ? (() => {
+              {(() => {
             const pointsMap: Record<string, number> = {}
             for (const cat of RADAR_CATS) pointsMap[cat] = 0
-            for (const a of periodAchievements) {
-              if (a.category && a.category in pointsMap) {
-                pointsMap[a.category] = (pointsMap[a.category] ?? 0) + (a.points ?? 0)
+            for (const item of catStats) {
+              if (item.category in pointsMap) {
+                pointsMap[item.category] = item.points ?? 0
               }
             }
-            const activeCats = RADAR_CATS.filter((c) => pointsMap[c] > 0)
-            if (!activeCats.length) return null
+            const activeCats = RADAR_CATS
             return (
               <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-3">
                 <h4 className="mb-2 text-xs font-semibold text-slate-600">Портрет</h4>
@@ -515,7 +493,7 @@ function StudentProfilePageInner() {
                         <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: isHidden ? chartColors.textFaint : chartColors.accent }} />
                         {cat}
                         <span className="text-[10px] font-semibold ml-0.5" style={{ color: isHidden ? chartColors.textFaint : chartColors.accentStrong }}>
-                          {pointsMap[cat]} б.
+                          {data.public_visibility?.score === false ? '' : `${pointsMap[cat]} б.`}
                         </span>
                       </button>
                     )
@@ -523,13 +501,13 @@ function StudentProfilePageInner() {
                 </div>
               </div>
             )
-          })() : null}
+          })()}
             </div>
           </section>
         ) : null}
 
           {data.public_visibility?.achievements !== false ? <div className="bg-surface rounded-2xl border border-slate-200 shadow-sm p-5">
-            <div className="mb-4 flex items-center justify-between gap-3"><h3 className="text-sm font-semibold text-slate-700">Подтверждённые достижения ({data.total_docs ?? data.achievements.length})</h3><span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-500">Только одобренные</span></div>
+            <div className="mb-4 flex items-center justify-between gap-3"><h3 className="text-sm font-semibold text-slate-700">Портрет достижений ({data.total_docs ?? data.achievements.length})</h3><span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-500">Только подтверждённые</span></div>
             {data.achievements.length ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
                 {data.achievements.map((a) => (
@@ -547,9 +525,11 @@ function StudentProfilePageInner() {
                               {isPdf(a.preview_url) ? 'PDF' : 'Фото'}
                             </span>
                           )}
-                          <div className="inline-flex items-center rounded-full bg-green-500 text-white text-[10px] font-bold px-2 py-1 shadow-sm">
-                            +{a.points || 0}
-                          </div>
+                          {data.public_visibility?.score !== false ? (
+                            <div className="inline-flex items-center rounded-full bg-indigo-600 text-white text-[10px] font-bold px-2 py-1 shadow-sm">
+                              +{a.points || 0}
+                            </div>
+                          ) : null}
                         </div>
                       </div>
                       <div className="mt-2 flex flex-wrap gap-1.5">

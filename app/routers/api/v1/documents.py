@@ -112,6 +112,7 @@ async def list_documents(
     sort_by: str = 'newest',
     date_from: str | None = Query(default=None),
     date_to: str | None = Query(default=None),
+    season: str = Query(default='current', max_length=100),
     current_user=Depends(_check_admin_rights),
     db: AsyncSession = Depends(get_db),
 ):
@@ -119,6 +120,20 @@ async def list_documents(
     offset = (page - 1) * page_size
 
     owner_education_level, owner_courses, owner_groups = _document_zone_filter(current_user)
+    season_rows = (await db.execute(
+        select(Achievement.archived_season, func.max(Achievement.updated_at).label('closed_at'))
+        .filter(Achievement.archived_season.is_not(None))
+        .group_by(Achievement.archived_season)
+        .order_by(func.max(Achievement.updated_at).desc())
+    )).all()
+    available_seasons = [row.archived_season for row in season_rows]
+
+    effective_statuses = statuses
+    if not statuses and season in {'all', 'last2'}:
+        effective_statuses = [item.value for item in AchievementStatus]
+    elif not statuses and season not in {'current', 'all', 'last2'}:
+        effective_statuses = [AchievementStatus.ARCHIVED.value]
+
     repo = AchievementRepository(db)
     stmt = repo.build_filter_stmt(
         search=query,
@@ -126,7 +141,7 @@ async def list_documents(
         category=category,
         level=level,
         result=result,
-        statuses=statuses,
+        statuses=effective_statuses,
         categories=categories,
         levels=levels,
         results=results,
@@ -138,6 +153,17 @@ async def list_documents(
         owner_courses=owner_courses,
         owner_groups=owner_groups,
     )
+
+    if season == 'last2':
+        previous = available_seasons[:1]
+        stmt = stmt.filter(or_(
+            Achievement.status != AchievementStatus.ARCHIVED,
+            Achievement.archived_season.in_(previous),
+        ))
+    elif season not in {'current', 'all'}:
+        if season not in available_seasons:
+            raise HTTPException(status_code=422, detail='Неизвестный сезон.')
+        stmt = stmt.filter(Achievement.status == AchievementStatus.ARCHIVED, Achievement.archived_season == season)
 
     try:
         if date_from:
@@ -155,16 +181,19 @@ async def list_documents(
         'total': total_items,
         'page': page,
         'total_pages': max(1, math.ceil(total_items / page_size)),
-        'statuses': [item.value for item in AchievementStatus if item != AchievementStatus.ARCHIVED],
+        'statuses': [item.value for item in AchievementStatus],
         'categories': [item.value for item in AchievementCategory],
         'levels': [item.value for item in AchievementLevel],
         'results': [item.value for item in AchievementResult],
+        'selected_season': season,
+        'available_seasons': available_seasons,
     }
 
 
 @router.get('/search')
 async def search_documents(
     q: str = Query(..., min_length=1),
+    season: str = Query(default='current', max_length=100),
     current_user=Depends(_check_admin_rights),
     db: AsyncSession = Depends(get_db),
 ):
@@ -179,6 +208,20 @@ async def search_documents(
         )
         .limit(5)
     )
+
+    if season == 'current':
+        stmt = stmt.filter(Achievement.status != AchievementStatus.ARCHIVED)
+    elif season == 'last2':
+        previous = list((await db.execute(
+            select(Achievement.archived_season)
+            .filter(Achievement.archived_season.is_not(None))
+            .group_by(Achievement.archived_season)
+            .order_by(func.max(Achievement.updated_at).desc())
+            .limit(1)
+        )).scalars().all())
+        stmt = stmt.filter(or_(Achievement.status != AchievementStatus.ARCHIVED, Achievement.archived_season.in_(previous)))
+    elif season not in {'all', 'last2'}:
+        stmt = stmt.filter(Achievement.status == AchievementStatus.ARCHIVED, Achievement.archived_season == season)
 
     education_level, owner_courses, owner_groups = _document_zone_filter(current_user)
     if education_level is not None:

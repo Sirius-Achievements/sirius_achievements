@@ -82,12 +82,19 @@ async def _apply_schema_updates():
         # groups and session GPA
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS study_group VARCHAR",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS session_gpa VARCHAR",
+        # profile/privacy columns (production may have an Alembic stamp from
+        # before these columns were actually created)
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS public_visibility JSON",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS registration_rejection_reason TEXT",
         # achievement result
         "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'achievementresult') THEN CREATE TYPE achievementresult AS ENUM ('PARTICIPANT', 'PRIZEWINNER', 'WINNER'); END IF; END $$",
         "ALTER TABLE achievements ADD COLUMN IF NOT EXISTS result achievementresult",
         # achievement external_url (file OR link)
         "ALTER TABLE achievements ALTER COLUMN file_path DROP NOT NULL",
         "ALTER TABLE achievements ADD COLUMN IF NOT EXISTS external_url VARCHAR",
+        # exact season ownership for archived documents
+        "ALTER TABLE achievements ADD COLUMN IF NOT EXISTS archived_season VARCHAR(100)",
+        "ALTER TABLE achievements ADD COLUMN IF NOT EXISTS archived_from_status VARCHAR(20)",
         # rename legacy study groups to ИОП-ИТ scheme
         "UPDATE users SET study_group = 'ИОП-ИТ-25/1' WHERE study_group = 'С-101'",
         "UPDATE users SET study_group = 'ИОП-ИТ-25/2' WHERE study_group = 'С-102'",
@@ -101,6 +108,7 @@ async def _apply_schema_updates():
         "CREATE INDEX IF NOT EXISTS ix_achievements_category ON achievements (category)",
         "CREATE INDEX IF NOT EXISTS ix_achievements_created_at ON achievements (created_at)",
         "CREATE INDEX IF NOT EXISTS ix_achievements_moderator_id ON achievements (moderator_id)",
+        "CREATE INDEX IF NOT EXISTS ix_achievements_archived_season ON achievements (archived_season)",
         "CREATE INDEX IF NOT EXISTS ix_users_role ON users (role)",
         "CREATE INDEX IF NOT EXISTS ix_users_status ON users (status)",
         "CREATE INDEX IF NOT EXISTS ix_users_zone ON users (education_level, course, study_group)",

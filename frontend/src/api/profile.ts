@@ -11,16 +11,19 @@ export interface ProfileResponse {
   chart_cumulative: number[]
   has_chart_data: boolean
   my_docs: Array<{ id: number; title: string; status: string; created_at: string; category: string; level: string; points: number; file_path?: string; result?: string }>
+  analytics_docs: Array<{ id: number; title: string; status: string; created_at: string; category: string; level: string; points: number; file_path?: string; result?: string; archived_season?: string | null }>
   gpa_bonus: number
   profile_completion: number
   public_visibility: Record<string, boolean>
   season_history: SeasonResult[]
   resume_versions: Array<{ id: number; text: string; source_documents_count: number; created_at?: string | null }>
+  selected_season: string
+  available_seasons: string[]
 }
 
 export const profileApi = {
-  get() {
-    return client.get<ProfileResponse>('/profile/')
+  get(season = 'current') {
+    return client.get<ProfileResponse>('/profile/', { params: { season } })
   },
 
   update(formData: FormData) {

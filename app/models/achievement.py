@@ -31,6 +31,10 @@ class Achievement(Base):
 
     status = Column(Enum(AchievementStatus), default=AchievementStatus.PENDING)
     rejection_reason = Column(Text, nullable=True)
+    # Filled when a season is closed.  Unlike created_at this is an exact,
+    # stable link between an archived document and the season it belongs to.
+    archived_season = Column(String(100), nullable=True)
+    archived_from_status = Column(String(20), nullable=True)
 
     moderator_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
