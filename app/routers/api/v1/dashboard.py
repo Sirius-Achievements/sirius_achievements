@@ -4,7 +4,7 @@ import os
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import desc, func, literal_column, or_, select
+from sqlalchemy import and_, desc, func, literal_column, or_, select, true
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +14,7 @@ from app.models.achievement import Achievement
 from app.models.bug_report import BugReport
 from app.models.enums import AchievementCategory, AchievementStatus, SupportTicketStatus, UserRole, UserStatus
 from app.models.notification import Notification
+from app.models.season_result import SeasonResult
 from app.models.support_message import SupportMessage
 from app.models.support_ticket import SupportTicket
 from app.models.user import Users
@@ -27,12 +28,12 @@ from .serializers import serialize_achievement
 DASHBOARD_CACHE_TTL = int(os.getenv('DASHBOARD_CACHE_TTL', 30))
 
 
-def _staff_dashboard_cache_key(user: Users, period: str, date_from: str | None, date_to: str | None) -> str:
+def _staff_dashboard_cache_key(user: Users, period: str, date_from: str | None, date_to: str | None, season: str) -> str:
     if user.role == UserRole.MODERATOR and user.education_level:
         zone = f'mod:{user.education_level_value}:{user.moderator_courses or ""}:{user.moderator_groups or ""}'
     else:
         zone = 'all'
-    return f'dash:{zone}|p={period}|from={date_from or ""}|to={date_to or ""}'
+    return f'dash:{zone}|p={period}|from={date_from or ""}|to={date_to or ""}|season={season}'
 
 router = APIRouter(prefix='/api/v1/dashboard', tags=['api.v1.dashboard'])
 
@@ -214,12 +215,62 @@ def _percent_change(current: int, previous: int) -> int:
     return round(((current - previous) / previous) * 100)
 
 
+def _achievement_season_condition(season: str):
+    if season == 'global':
+        return true()
+    if season == 'current':
+        return Achievement.status != AchievementStatus.ARCHIVED
+    return and_(Achievement.status == AchievementStatus.ARCHIVED, Achievement.archived_season == season)
+
+
+def _achievement_effective_status(season: str, status: AchievementStatus):
+    current = Achievement.status == status
+    archived = and_(
+        Achievement.status == AchievementStatus.ARCHIVED,
+        Achievement.archived_from_status == status.value,
+    )
+    if status == AchievementStatus.APPROVED:
+        archived = and_(
+            Achievement.status == AchievementStatus.ARCHIVED,
+            or_(
+                Achievement.archived_from_status == AchievementStatus.APPROVED.value,
+                Achievement.archived_from_status.is_(None),
+            ),
+        )
+    if season == 'global':
+        return or_(current, archived)
+    if season == 'current':
+        return current
+    return and_(archived, Achievement.archived_season == season)
+
+
+async def _dashboard_seasons(db: AsyncSession) -> list[dict]:
+    rows = (await db.execute(
+        select(
+            SeasonResult.season_name,
+            func.max(SeasonResult.created_at).label('created_at'),
+            func.count(SeasonResult.id).label('participants'),
+        )
+        .group_by(SeasonResult.season_name)
+        .order_by(desc('created_at'))
+    )).all()
+    return [
+        {
+            'name': name,
+            'created_at': created_at.isoformat() if created_at else None,
+            'participants': int(participants or 0),
+        }
+        for name, created_at, participants in rows
+    ]
+
+
 @router.get('')
 @router.get('/')
 async def dashboard(
     period: str = Query(default='all'),
     date_from: str | None = Query(default=None),
     date_to: str | None = Query(default=None),
+    season: str = Query(default='current'),
     current_user=Depends(auth),
     db: AsyncSession = Depends(get_db),
 ):
@@ -233,10 +284,13 @@ async def dashboard(
 
     start_date, end_date, date_trunc, date_fmt = _parse_date_range(period, date_from, date_to)
 
-    include_gpa_bonus = period == 'all'
+    include_gpa_bonus = period == 'all' and season == 'current'
+    season_condition = _achievement_season_condition(season)
+    approved_condition = _achievement_effective_status(season, AchievementStatus.APPROVED)
+    available_seasons = await _dashboard_seasons(db)
 
     if user.is_staff:
-        _dash_key = _staff_dashboard_cache_key(user, period, date_from, date_to)
+        _dash_key = _staff_dashboard_cache_key(user, period, date_from, date_to, season)
         _cached = await cache_get_json(_dash_key)
         if _cached is not None:
             return _cached
@@ -274,13 +328,13 @@ async def dashboard(
 
         ach_stats_stmt = _staff_scoped_achievement_stmt(
             select(
-                func.count().filter(Achievement.status == AchievementStatus.PENDING, Achievement.created_at >= start_date, Achievement.created_at < end_date).label('pending'),
-                func.count().filter(Achievement.status == AchievementStatus.APPROVED, Achievement.updated_at >= start_date, Achievement.updated_at < end_date).label('approved'),
-                func.count().filter(Achievement.status == AchievementStatus.REJECTED, Achievement.updated_at >= start_date, Achievement.updated_at < end_date).label('rejected'),
-                func.count().filter(Achievement.status == AchievementStatus.REVISION, Achievement.updated_at >= start_date, Achievement.updated_at < end_date).label('revision'),
-                func.count().filter(Achievement.created_at >= start_date, Achievement.created_at < end_date).label('total'),
-                func.count().filter(Achievement.file_path.isnot(None), Achievement.created_at >= start_date, Achievement.created_at < end_date).label('with_file'),
-                func.count().filter(Achievement.external_url.isnot(None), Achievement.created_at >= start_date, Achievement.created_at < end_date).label('with_link'),
+                func.count().filter(_achievement_effective_status(season, AchievementStatus.PENDING), Achievement.created_at >= start_date, Achievement.created_at < end_date).label('pending'),
+                func.count().filter(approved_condition, Achievement.updated_at >= start_date, Achievement.updated_at < end_date).label('approved'),
+                func.count().filter(_achievement_effective_status(season, AchievementStatus.REJECTED), Achievement.updated_at >= start_date, Achievement.updated_at < end_date).label('rejected'),
+                func.count().filter(_achievement_effective_status(season, AchievementStatus.REVISION), Achievement.updated_at >= start_date, Achievement.updated_at < end_date).label('revision'),
+                func.count().filter(season_condition, Achievement.created_at >= start_date, Achievement.created_at < end_date).label('total'),
+                func.count().filter(season_condition, Achievement.file_path.isnot(None), Achievement.created_at >= start_date, Achievement.created_at < end_date).label('with_file'),
+                func.count().filter(season_condition, Achievement.external_url.isnot(None), Achievement.created_at >= start_date, Achievement.created_at < end_date).label('with_link'),
             ),
             user,
         )
@@ -323,11 +377,12 @@ async def dashboard(
             previous_achievements_stmt = _staff_scoped_achievement_stmt(
                 select(
                     func.count().filter(
+                        season_condition,
                         Achievement.created_at >= previous_start,
                         Achievement.created_at < previous_end,
                     ).label('total'),
                     func.count().filter(
-                        Achievement.status == AchievementStatus.APPROVED,
+                        approved_condition,
                         Achievement.updated_at >= previous_start,
                         Achievement.updated_at < previous_end,
                     ).label('approved'),
@@ -362,9 +417,9 @@ async def dashboard(
             .outerjoin(
                 Achievement,
                 (Users.id == Achievement.user_id)
-                & (Achievement.status == AchievementStatus.APPROVED)
-                & (Achievement.updated_at >= start_date)
-                & (Achievement.updated_at < end_date),
+                & approved_condition
+                & (Achievement.created_at >= start_date)
+                & (Achievement.created_at < end_date),
             )
             .filter(Users.role == UserRole.STUDENT, Users.status == UserStatus.ACTIVE)
             .group_by(Users.id)
@@ -379,7 +434,7 @@ async def dashboard(
             select(Achievement)
             .options(selectinload(Achievement.user))
             .join(Users, Achievement.user_id == Users.id)
-            .filter(Achievement.created_at >= start_date, Achievement.created_at < end_date)
+            .filter(season_condition, Achievement.created_at >= start_date, Achievement.created_at < end_date)
             .order_by(Achievement.created_at.desc())
             .limit(5)
         )
@@ -391,7 +446,7 @@ async def dashboard(
                 func.date_trunc(date_trunc, Achievement.created_at).label('bucket'),
                 func.count().label('cnt'),
             )
-            .filter(Achievement.created_at >= start_date, Achievement.created_at < end_date)
+            .filter(season_condition, Achievement.created_at >= start_date, Achievement.created_at < end_date)
             .group_by(literal_column('bucket'))
             .order_by(literal_column('bucket')),
             user,
@@ -407,6 +462,7 @@ async def dashboard(
             .filter(
                 Achievement.created_at >= start_date,
                 Achievement.created_at < end_date,
+                season_condition,
                 Users.course.isnot(None),
             )
             .group_by(Users.course)
@@ -425,6 +481,7 @@ async def dashboard(
             .filter(
                 Achievement.created_at >= start_date,
                 Achievement.created_at < end_date,
+                season_condition,
                 Users.study_group.isnot(None),
             )
             .group_by(Users.study_group, Users.course)
@@ -439,7 +496,7 @@ async def dashboard(
                 func.count().label('count'),
                 func.coalesce(func.sum(Achievement.points), 0).label('points'),
             )
-            .filter(Achievement.created_at >= start_date, Achievement.created_at < end_date)
+            .filter(season_condition, Achievement.created_at >= start_date, Achievement.created_at < end_date)
             .group_by(Achievement.category)
             .order_by(desc('count')),
             user,
@@ -459,6 +516,8 @@ async def dashboard(
         ][:3]
 
         _dash_payload = {
+            'selected_season': season,
+            'available_seasons': available_seasons,
             'date_from': start_date.date().isoformat(),
             'date_to': (end_date - timedelta(days=1)).date().isoformat(),
             'new_users_count': int(new_users_count),
@@ -554,9 +613,9 @@ async def dashboard(
     achievement_points = (await db.execute(
         select(func.coalesce(func.sum(Achievement.points), 0)).filter(
             Achievement.user_id == user.id,
-            Achievement.status == AchievementStatus.APPROVED,
-            Achievement.updated_at >= start_date,
-            Achievement.updated_at < end_date,
+            approved_condition,
+            Achievement.created_at >= start_date,
+            Achievement.created_at < end_date,
         )
     )).scalar() or 0
     gpa_bonus = calculate_gpa_bonus(user.session_gpa) if include_gpa_bonus else 0
@@ -564,11 +623,11 @@ async def dashboard(
 
     doc_stats = (await db.execute(
         select(
-            func.count().filter(Achievement.user_id == user.id, Achievement.created_at >= start_date, Achievement.created_at < end_date).label('total'),
-            func.count().filter(Achievement.user_id == user.id, Achievement.status == AchievementStatus.PENDING, Achievement.created_at >= start_date, Achievement.created_at < end_date).label('pending'),
-            func.count().filter(Achievement.user_id == user.id, Achievement.status == AchievementStatus.APPROVED, Achievement.updated_at >= start_date, Achievement.updated_at < end_date).label('approved'),
-            func.count().filter(Achievement.user_id == user.id, Achievement.status == AchievementStatus.REJECTED, Achievement.updated_at >= start_date, Achievement.updated_at < end_date).label('rejected'),
-            func.count().filter(Achievement.user_id == user.id, Achievement.status == AchievementStatus.REVISION).label('revision'),
+            func.count().filter(Achievement.user_id == user.id, season_condition, Achievement.created_at >= start_date, Achievement.created_at < end_date).label('total'),
+            func.count().filter(Achievement.user_id == user.id, _achievement_effective_status(season, AchievementStatus.PENDING), Achievement.created_at >= start_date, Achievement.created_at < end_date).label('pending'),
+            func.count().filter(Achievement.user_id == user.id, approved_condition, Achievement.updated_at >= start_date, Achievement.updated_at < end_date).label('approved'),
+            func.count().filter(Achievement.user_id == user.id, _achievement_effective_status(season, AchievementStatus.REJECTED), Achievement.updated_at >= start_date, Achievement.updated_at < end_date).label('rejected'),
+            func.count().filter(Achievement.user_id == user.id, _achievement_effective_status(season, AchievementStatus.REVISION)).label('revision'),
         )
     )).first()
 
@@ -581,9 +640,9 @@ async def dashboard(
         .outerjoin(
             Achievement,
             (Users.id == Achievement.user_id)
-            & (Achievement.status == AchievementStatus.APPROVED)
-            & (Achievement.updated_at >= start_date)
-            & (Achievement.updated_at < end_date),
+            & approved_condition
+            & (Achievement.created_at >= start_date)
+            & (Achievement.created_at < end_date),
         )
         .filter(Users.role == UserRole.STUDENT, Users.status == UserStatus.ACTIVE)
     )
@@ -611,7 +670,7 @@ async def dashboard(
 
     recent_docs = (await db.execute(
         select(Achievement)
-        .filter(Achievement.user_id == user.id, Achievement.created_at >= start_date, Achievement.created_at < end_date)
+        .filter(Achievement.user_id == user.id, season_condition, Achievement.created_at >= start_date, Achievement.created_at < end_date)
         .order_by(Achievement.created_at.desc())
         .limit(5)
     )).scalars().all()
@@ -620,9 +679,9 @@ async def dashboard(
         select(Achievement.category, func.sum(Achievement.points))
         .filter(
             Achievement.user_id == user.id,
-            Achievement.status == AchievementStatus.APPROVED,
-            Achievement.updated_at >= start_date,
-            Achievement.updated_at < end_date,
+            approved_condition,
+            Achievement.created_at >= start_date,
+            Achievement.created_at < end_date,
         )
         .group_by(Achievement.category)
     )).all()
@@ -662,6 +721,8 @@ async def dashboard(
     profile_completion = round((sum(value not in (None, '') for value in profile_fields) / len(profile_fields)) * 100)
 
     return {
+        'selected_season': season,
+        'available_seasons': available_seasons,
         'date_from': start_date.date().isoformat(),
         'date_to': (end_date - timedelta(days=1)).date().isoformat(),
         'my_points': my_points,
@@ -679,4 +740,3 @@ async def dashboard(
         'revision_achievements': int(doc_stats.revision or 0),
         'recommendations': recommendations,
     }
-

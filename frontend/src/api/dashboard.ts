@@ -5,6 +5,8 @@ export interface DashboardStats {
   pending_review?: boolean
   date_from?: string
   date_to?: string
+  selected_season?: string
+  available_seasons?: Array<{ name: string; created_at?: string | null; participants: number }>
   new_users_count?: number
   pending_achievements?: number
   approved_achievements?: number
@@ -101,8 +103,8 @@ export interface InboxCountsParams {
 }
 
 export const dashboardApi = {
-  getStats(period?: string, dateFrom?: string, dateTo?: string) {
-    return client.get<DashboardStats>('/dashboard', { params: { period, date_from: dateFrom || undefined, date_to: dateTo || undefined } })
+  getStats(period?: string, dateFrom?: string, dateTo?: string, season?: string) {
+    return client.get<DashboardStats>('/dashboard', { params: { period, date_from: dateFrom || undefined, date_to: dateTo || undefined, season: season || 'current' } })
   },
 
   getInboxCounts(params?: InboxCountsParams) {

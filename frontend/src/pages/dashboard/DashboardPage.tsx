@@ -15,11 +15,12 @@ function normalizePeriod(value: string | null) {
   return PERIODS.includes((value ?? '') as (typeof PERIODS)[number]) ? (value as (typeof PERIODS)[number]) : 'all'
 }
 
-function periodDescription(period: string) {
-  if (period === 'day') return 'Данные за последние 24 часа'
-  if (period === 'week') return 'Данные за последние 7 дней'
-  if (period === 'month') return 'Данные за последние 30 дней'
-  return 'Сводная информация за всё время'
+function periodDescription(period: string, season: string) {
+  const seasonLabel = season === 'global' ? 'Глобальная статистика' : season === 'current' ? 'Текущий сезон' : `Сезон «${season}»`
+  if (period === 'day') return `${seasonLabel} · последние 24 часа`
+  if (period === 'week') return `${seasonLabel} · последние 7 дней`
+  if (period === 'month') return `${seasonLabel} · последние 30 дней`
+  return `${seasonLabel} · весь доступный период`
 }
 
 function statusLabel(status: string) {
@@ -49,6 +50,7 @@ export function DashboardPage() {
   const period = normalizePeriod(searchParams.get('period'))
   const dateFrom = searchParams.get('date_from') ?? ''
   const dateTo = searchParams.get('date_to') ?? ''
+  const season = searchParams.get('season') ?? 'current'
   const isStaff = user?.role === 'MODERATOR' || user?.role === 'SUPER_ADMIN'
   const isSuperAdmin = user?.role === 'SUPER_ADMIN'
   const isDeletedAccount = user?.status === 'deleted'
@@ -66,7 +68,7 @@ export function DashboardPage() {
       setIsLoading(true)
       setError(null)
       try {
-        const response = await dashboardApi.getStats(period, dateFrom, dateTo)
+        const response = await dashboardApi.getStats(period, dateFrom, dateTo, season)
         setStats(response.data)
       } catch (loadError) {
         setError(getErrorMessage(loadError, 'Не удалось загрузить дашборд.'))
@@ -75,7 +77,7 @@ export function DashboardPage() {
       }
     }
     void load()
-  }, [dateTo, dateFrom, isDeletedAccount, isRejectedAccount, period])
+  }, [dateTo, dateFrom, isDeletedAccount, isRejectedAccount, period, season])
 
   useEffect(() => {
     const canvas = chartCanvasRef.current
@@ -127,7 +129,7 @@ export function DashboardPage() {
                 end.setDate(0)
               }
               const toIsoDate = (value: Date) => value.toISOString().slice(0, 10)
-              navigate(`/documents?date_from=${bucketDate}&date_to=${toIsoDate(end)}`)
+              navigate(`/documents?date_from=${bucketDate}&date_to=${toIsoDate(end)}&season=${encodeURIComponent(season)}`)
             },
             plugins: {
               legend: { display: false },
@@ -224,7 +226,7 @@ export function DashboardPage() {
       document.removeEventListener('themechange', onTheme)
       destroy()
     }
-  }, [dateFrom, dateTo, isStaff, navigate, period, stats])
+  }, [dateFrom, dateTo, isStaff, navigate, period, season, stats])
 
   if (isDeletedAccount || stats?.deleted_account) {
     return (
@@ -308,6 +310,13 @@ export function DashboardPage() {
     setSearchParams(next)
   }
 
+  const setSeason = (value: string) => {
+    const next = new URLSearchParams(searchParams)
+    if (value === 'current') next.delete('season')
+    else next.set('season', value)
+    setSearchParams(next)
+  }
+
   const staffCards = [
     { label: 'Новых студентов', value: `+${stats?.new_users_count ?? 0}`, trend: stats?.trend?.new_users },
     { label: 'Всего загружено док.', value: `${stats?.total_achievements ?? 0}`, trend: stats?.trend?.documents },
@@ -325,10 +334,20 @@ export function DashboardPage() {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 mb-2">
         <div>
           <h2 className="text-2xl font-bold text-slate-800 tracking-tight">{isStaff ? 'Обзор статистики' : 'Мой прогресс'}</h2>
-          <p className="text-sm text-slate-500 mt-1">{periodDescription(period)}</p>
+          <p className="text-sm text-slate-500 mt-1">{periodDescription(period, season)}</p>
         </div>
 
         <div className="w-full lg:max-w-[720px] space-y-2">
+          <label className="flex min-h-[46px] items-center gap-3 rounded-xl border border-slate-200 bg-surface px-3 py-2 shadow-sm">
+            <span className="shrink-0 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">Рейтинг</span>
+            <select value={season} onChange={(event) => setSeason(event.target.value)} className="w-full min-w-0 border-0 bg-transparent p-0 text-sm font-semibold text-slate-700 outline-none">
+              <option value="global">Глобально · за всё время</option>
+              <option value="current">Текущий сезон</option>
+              {(stats?.available_seasons ?? []).map((item) => (
+                <option key={item.name} value={item.name}>{item.name} · {item.participants} участников</option>
+              ))}
+            </select>
+          </label>
           <div className="grid min-h-[46px] grid-cols-4 gap-1 rounded-xl border border-slate-200 bg-surface p-1 text-sm font-medium shadow-sm">
               {PERIODS.map((item) => (
                 <a key={item} href={`?period=${item}`} onClick={(event) => { event.preventDefault(); setPeriod(item) }} className={`flex-1 rounded-lg px-3 py-2 text-center transition-colors ${period === item && !dateFrom && !dateTo ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-50'}`}>

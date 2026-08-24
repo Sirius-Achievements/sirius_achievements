@@ -35,6 +35,7 @@ export interface LeaderboardResponse {
   current_categories?: string[]
   current_category_logic?: 'or' | 'and'
   current_group: string
+  ranking_scope: 'current' | 'global' | string
   categories: string[]
   education_levels: string[]
   course_mapping: Record<string, number>
@@ -53,6 +54,7 @@ export interface LeaderboardParams {
   category_logic?: string
   group?: string
   scope?: string
+  season?: string
 }
 
 export const leaderboardApi = {
@@ -80,4 +82,3 @@ export const leaderboardApi = {
     })
   },
 }
-

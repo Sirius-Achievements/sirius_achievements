@@ -44,15 +44,16 @@ function matchesLeaderboardRow(row: LeaderboardRow, query: string) {
 
 function leagueDescription(data: LeaderboardResponse | null, isStaff: boolean) {
   if (!data) return ''
+  const timeScope = data.ranking_scope === 'global' ? 'Глобально за всё время' : 'Текущий сезон'
   if (data.current_category && data.current_category !== 'all') {
-    return `Рейтинг по направлению: ${data.current_category}`
+    return `${timeScope} · направление: ${data.current_category}`
   }
   if (data.current_education_level === 'all' && data.current_course === 0) {
-    return 'Глобальный рейтинг (Все студенты)'
+    return `${timeScope} · все студенты`
   }
 
   const scope = `${data.current_education_level !== 'all' ? data.current_education_level : 'Все уровни'}, ${data.current_course !== 0 ? courseLabel(data.current_course) : 'Все курсы'}${data.current_group !== 'all' ? `, группа ${data.current_group}` : ''}`
-  return `${isStaff ? 'Лига' : 'Ваша лига'}: ${scope}`
+  return `${timeScope} · ${isStaff ? 'лига' : 'ваша лига'}: ${scope}`
 }
 
 function buildUserLink(row: LeaderboardRow, isStaff: boolean) {
@@ -99,7 +100,7 @@ export function LeaderboardPage() {
   const [seasonModalOpen, setSeasonModalOpen] = useState(false)
   const [seasonName, setSeasonName] = useState('')
   const [isEndingSeason, setIsEndingSeason] = useState(false)
-  const [viewMode, setViewMode] = useState<'current' | 'history'>('current')
+  const [viewMode, setViewMode] = useState<'global' | 'current' | 'history'>('global')
   const [seasons, setSeasons] = useState<CompletedSeason[]>([])
   const [selectedSeason, setSelectedSeason] = useState('')
   const [seasonRows, setSeasonRows] = useState<CompletedSeasonRow[]>([])
@@ -122,10 +123,11 @@ export function LeaderboardPage() {
       category_logic: categories.length > 1 && categoryLogic === 'and' ? 'and' : undefined,
       group,
       scope: isGlobal ? 'global' : undefined,
+      season: viewMode === 'global' ? 'global' : 'current',
     }),
     // categoriesKey captures the array contents for memo stability
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [categoriesKey, categoryLogic, course, educationLevel, group, isGlobal]
+    [categoriesKey, categoryLogic, course, educationLevel, group, isGlobal, viewMode]
   )
 
   const setScope = (global: boolean) => {
@@ -392,8 +394,8 @@ export function LeaderboardPage() {
             <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Завершённые сезоны</h2>
             <p className="text-sm text-slate-500 mt-1">Зафиксированные позиции и баллы не меняются вместе с текущим рейтингом.</p>
           </div>
-          <button type="button" onClick={() => setViewMode('current')} className="px-4 py-2.5 rounded-lg border border-slate-200 bg-surface text-sm font-semibold text-slate-600 hover:text-indigo-600">
-            Текущий сезон
+          <button type="button" onClick={() => setViewMode('global')} className="px-4 py-2.5 rounded-lg border border-slate-200 bg-surface text-sm font-semibold text-slate-600 hover:text-indigo-600">
+            Вернуться к рейтингу
           </button>
         </div>
 
@@ -484,8 +486,9 @@ export function LeaderboardPage() {
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
-        <button type="button" className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-xs font-bold">Текущий сезон</button>
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="button" onClick={() => setViewMode('global')} className={`px-4 py-2 rounded-lg text-xs font-bold ${viewMode === 'global' ? 'bg-indigo-600 text-white' : 'border border-slate-200 bg-surface text-slate-600 hover:text-indigo-600'}`}>Глобальный рейтинг</button>
+        <button type="button" onClick={() => setViewMode('current')} className={`px-4 py-2 rounded-lg text-xs font-bold ${viewMode === 'current' ? 'bg-indigo-600 text-white' : 'border border-slate-200 bg-surface text-slate-600 hover:text-indigo-600'}`}>Текущий сезон</button>
         <button type="button" onClick={() => setViewMode('history')} className="px-4 py-2 rounded-lg border border-slate-200 bg-surface text-slate-600 hover:text-indigo-600 text-xs font-bold">Завершённые сезоны{seasons.length ? ` · ${seasons.length}` : ''}</button>
       </div>
       {isStaff ? <p className="-mt-4 text-xs text-slate-400">CSV выгружается с учётом выбранных ниже уровня обучения, курса, группы и направлений.</p> : null}
