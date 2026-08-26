@@ -212,7 +212,7 @@ async def _load_user_profile_snapshot(db: AsyncSession, target_user: Users) -> d
     achievements_stmt = (
         select(Achievement)
         .options(selectinload(Achievement.user))
-        .filter(Achievement.user_id == user_id, Achievement.status != AchievementStatus.ARCHIVED)
+        .filter(Achievement.user_id == user_id, Achievement.archived_season.is_(None))
         .order_by(Achievement.created_at.desc())
     )
     achievements = (await db.execute(achievements_stmt)).scalars().all()
@@ -231,7 +231,7 @@ async def _load_user_profile_snapshot(db: AsyncSession, target_user: Users) -> d
         ).label('total_points')
         leaderboard_stmt = (
             select(Users.id, total_points_expr)
-            .outerjoin(Achievement, (Users.id == Achievement.user_id) & (Achievement.status == AchievementStatus.APPROVED))
+            .outerjoin(Achievement, (Users.id == Achievement.user_id) & (Achievement.status == AchievementStatus.APPROVED) & Achievement.archived_season.is_(None) & Achievement.eligible_for_ranking.is_(True))
             .filter(Users.role == UserRole.STUDENT, Users.status == UserStatus.ACTIVE)
             .group_by(Users.id)
             .order_by(desc('total_points'))
@@ -250,7 +250,12 @@ async def _load_user_profile_snapshot(db: AsyncSession, target_user: Users) -> d
             func.count().label('count'),
             func.coalesce(func.sum(Achievement.points), 0).label('points'),
         )
-        .filter(Achievement.user_id == user_id, Achievement.status == AchievementStatus.APPROVED)
+        .filter(
+            Achievement.user_id == user_id,
+            Achievement.status == AchievementStatus.APPROVED,
+            Achievement.archived_season.is_(None),
+            Achievement.eligible_for_ranking.is_(True),
+        )
         .group_by(literal_column('bucket'))
         .order_by(literal_column('bucket'))
     )
@@ -390,6 +395,7 @@ async def list_users(
 async def search_users(
     q: str = Query(..., min_length=1),
     limit: int = Query(default=20, ge=1, le=100),
+    role: UserRole | None = Query(default=None),
     current_user=Depends(_check_admin_rights),
     db: AsyncSession = Depends(get_db),
 ):
@@ -409,6 +415,9 @@ async def search_users(
         )
         .limit(limit)
     )
+
+    if role is not None:
+        stmt = stmt.filter(Users.role == role)
 
     stmt = _apply_moderator_user_scope(stmt, current_user)
 

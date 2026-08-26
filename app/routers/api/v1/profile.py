@@ -127,27 +127,33 @@ async def profile(
     resume_service = ResumeService(db)
     check = await resume_service.can_generate(user.id)
     season_history = await load_season_history(db, user.id)
-    archived_approved = and_(
-        Achievement.status == AchievementStatus.ARCHIVED,
+    preserved_approved = and_(
+        Achievement.eligible_for_ranking.is_(True),
         or_(
-            Achievement.archived_from_status == AchievementStatus.APPROVED.value,
-            Achievement.archived_from_status.is_(None),
+            Achievement.status == AchievementStatus.APPROVED,
+            and_(
+                Achievement.status == AchievementStatus.ARCHIVED,
+                or_(
+                    Achievement.archived_from_status == AchievementStatus.APPROVED.value,
+                    Achievement.archived_from_status.is_(None),
+                ),
+            ),
         ),
     )
     if season == 'current':
-        analytics_filter = Achievement.status == AchievementStatus.APPROVED
+        analytics_filter = and_(Achievement.status == AchievementStatus.APPROVED, Achievement.archived_season.is_(None), Achievement.eligible_for_ranking.is_(True))
     elif season == 'all':
-        analytics_filter = or_(Achievement.status == AchievementStatus.APPROVED, archived_approved)
+        analytics_filter = preserved_approved
     elif season == 'last2':
         previous = [item.season_name for item in season_history[:1]]
         analytics_filter = or_(
-            Achievement.status == AchievementStatus.APPROVED,
-            and_(archived_approved, Achievement.archived_season.in_(previous)),
+            and_(Achievement.status == AchievementStatus.APPROVED, Achievement.archived_season.is_(None), Achievement.eligible_for_ranking.is_(True)),
+            and_(preserved_approved, Achievement.archived_season.in_(previous)),
         )
     else:
         if season not in {item.season_name for item in season_history}:
             raise HTTPException(status_code=422, detail='Неизвестный сезон.')
-        analytics_filter = and_(archived_approved, Achievement.archived_season == season)
+        analytics_filter = and_(preserved_approved, Achievement.archived_season == season)
 
     approved_rows = (await db.execute(
         select(

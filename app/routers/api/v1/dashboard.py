@@ -1,10 +1,10 @@
 ﻿from __future__ import annotations
 
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy import and_, desc, func, literal_column, or_, select, true
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import and_, desc, false, func, literal_column, or_, select, true
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,10 +14,12 @@ from app.models.achievement import Achievement
 from app.models.bug_report import BugReport
 from app.models.enums import AchievementCategory, AchievementStatus, SupportTicketStatus, UserRole, UserStatus
 from app.models.notification import Notification
+from app.models.season import Season
 from app.models.season_result import SeasonResult
 from app.models.support_message import SupportMessage
 from app.models.support_ticket import SupportTicket
 from app.models.user import Users
+from app.services.season_service import get_live_season
 from app.utils.cache import cache_get_json, cache_set_json
 from app.utils.points import aggregated_gpa_bonus_expr, calculate_gpa_bonus
 
@@ -33,7 +35,7 @@ def _staff_dashboard_cache_key(user: Users, period: str, date_from: str | None, 
         zone = f'mod:{user.education_level_value}:{user.moderator_courses or ""}:{user.moderator_groups or ""}'
     else:
         zone = 'all'
-    return f'dash:{zone}|p={period}|from={date_from or ""}|to={date_to or ""}|season={season}'
+    return f'dash:{zone}|viewer={user.id}|p={period}|from={date_from or ""}|to={date_to or ""}|season={season}'
 
 router = APIRouter(prefix='/api/v1/dashboard', tags=['api.v1.dashboard'])
 
@@ -66,6 +68,7 @@ async def inbox_counts(
     support_seen_after = _parse_seen_at(support_seen_at)
 
     if user.is_staff:
+        live_season = await get_live_season(db)
         users_stmt = select(func.count()).select_from(Users).filter(Users.status == UserStatus.PENDING)
         users_stmt = _apply_staff_user_scope(users_stmt, user)
         if users_seen_after:
@@ -78,6 +81,9 @@ async def inbox_counts(
             .filter(Achievement.status == AchievementStatus.PENDING)
         )
         achievements_stmt = _apply_staff_user_scope(achievements_stmt, user)
+        achievements_stmt = achievements_stmt.filter(
+            Achievement.season_id == live_season.id if live_season else false()
+        )
         if achievements_seen_after:
             achievements_stmt = achievements_stmt.filter(Achievement.created_at > achievements_seen_after)
 
@@ -177,10 +183,26 @@ def _staff_scoped_support_stmt(stmt, user: Users):
     return _apply_staff_user_scope(stmt, user)
 
 
-def _parse_date_range(period: str, date_from: str | None, date_to: str | None):
-    now = datetime.now()
-    start_date = datetime(2020, 1, 1)
-    end_date = now + timedelta(days=1)
+def _naive_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _parse_date_range(
+    period: str,
+    date_from: str | None,
+    date_to: str | None,
+    *,
+    boundary_start: datetime | None = None,
+    boundary_end: datetime | None = None,
+):
+    now = _naive_utc(boundary_end) or datetime.now()
+    earliest = _naive_utc(boundary_start) or datetime(2020, 1, 1)
+    start_date = earliest
+    end_date = now
     date_trunc = 'month'
     date_fmt = '%m.%Y'
 
@@ -206,6 +228,12 @@ def _parse_date_range(period: str, date_from: str | None, date_to: str | None):
         date_trunc = 'day'
         date_fmt = '%d.%m'
 
+    start_date = max(start_date, earliest)
+    if boundary_end:
+        end_date = min(end_date, now)
+    if start_date >= end_date:
+        raise HTTPException(status_code=422, detail='Выбранный период не пересекается с датами сезона.')
+
     return start_date, end_date, date_trunc, date_fmt
 
 
@@ -219,12 +247,18 @@ def _achievement_season_condition(season: str):
     if season == 'global':
         return true()
     if season == 'current':
-        return Achievement.status != AchievementStatus.ARCHIVED
-    return and_(Achievement.status == AchievementStatus.ARCHIVED, Achievement.archived_season == season)
+        # Keep the legacy archive marker in the condition while the explicit
+        # season_id lifecycle is rolled out. This prevents old archived rows
+        # without a season snapshot from leaking into current analytics.
+        return and_(
+            Achievement.archived_season.is_(None),
+            Achievement.status != AchievementStatus.ARCHIVED,
+        )
+    return Achievement.archived_season == season
 
 
 def _achievement_effective_status(season: str, status: AchievementStatus):
-    current = Achievement.status == status
+    current = and_(Achievement.status == status, Achievement.archived_season.is_(None))
     archived = and_(
         Achievement.status == AchievementStatus.ARCHIVED,
         Achievement.archived_from_status == status.value,
@@ -237,30 +271,35 @@ def _achievement_effective_status(season: str, status: AchievementStatus):
                 Achievement.archived_from_status.is_(None),
             ),
         )
+    preserved = or_(Achievement.status == status, archived)
+    if status == AchievementStatus.APPROVED:
+        preserved = and_(preserved, Achievement.eligible_for_ranking.is_(True))
     if season == 'global':
-        return or_(current, archived)
+        return preserved
     if season == 'current':
         return current
-    return and_(archived, Achievement.archived_season == season)
+    return and_(preserved, Achievement.archived_season == season)
 
 
 async def _dashboard_seasons(db: AsyncSession) -> list[dict]:
     rows = (await db.execute(
-        select(
-            SeasonResult.season_name,
-            func.max(SeasonResult.created_at).label('created_at'),
-            func.count(SeasonResult.id).label('participants'),
-        )
-        .group_by(SeasonResult.season_name)
-        .order_by(desc('created_at'))
+        select(Season, func.count(SeasonResult.id).label('participants'))
+        .outerjoin(SeasonResult, SeasonResult.season_id == Season.id)
+        .where(Season.status.in_(['published', 'archived']))
+        .group_by(Season.id)
+        .order_by(Season.start_at.desc(), Season.id.desc())
     )).all()
     return [
         {
-            'name': name,
-            'created_at': created_at.isoformat() if created_at else None,
+            'id': season.id,
+            'name': season.name,
+            'status': season.status,
+            'start_at': season.start_at.isoformat(),
+            'ended_at': (season.results_published_at or season.finalized_at or season.moderation_close_at or season.submissions_close_at).isoformat() if (season.results_published_at or season.finalized_at or season.moderation_close_at or season.submissions_close_at) else None,
+            'created_at': season.results_published_at.isoformat() if season.results_published_at else None,
             'participants': int(participants or 0),
         }
-        for name, created_at, participants in rows
+        for season, participants in rows
     ]
 
 
@@ -282,7 +321,34 @@ async def dashboard(
     if user.status == UserStatus.PENDING and not user.is_staff:
         return {'pending_review': True}
 
-    start_date, end_date, date_trunc, date_fmt = _parse_date_range(period, date_from, date_to)
+    scoped_season = None
+    if season == 'current':
+        scoped_season = await get_live_season(db)
+    elif season != 'global':
+        scoped_season = await db.scalar(
+            select(Season).where(
+                Season.name == season,
+                Season.status.in_(['published', 'archived']),
+            )
+        )
+        if not scoped_season:
+            raise HTTPException(status_code=404, detail='Сезон не найден.')
+
+    season_end = None
+    if scoped_season and season != 'current':
+        season_end = (
+            scoped_season.results_published_at
+            or scoped_season.finalized_at
+            or scoped_season.moderation_close_at
+            or scoped_season.submissions_close_at
+        )
+    start_date, end_date, date_trunc, date_fmt = _parse_date_range(
+        period,
+        date_from,
+        date_to,
+        boundary_start=scoped_season.start_at if scoped_season else None,
+        boundary_end=season_end,
+    )
 
     include_gpa_bonus = period == 'all' and season == 'current'
     season_condition = _achievement_season_condition(season)
@@ -290,6 +356,7 @@ async def dashboard(
     available_seasons = await _dashboard_seasons(db)
 
     if user.is_staff:
+        live_season = await get_live_season(db)
         _dash_key = _staff_dashboard_cache_key(user, period, date_from, date_to, season)
         _cached = await cache_get_json(_dash_key)
         if _cached is not None:
@@ -341,6 +408,9 @@ async def dashboard(
         ach_stats = (await db.execute(ach_stats_stmt)).first()
 
         overdue_before = datetime.now() - timedelta(hours=48)
+        live_queue_condition = (
+            Achievement.season_id == live_season.id if live_season else false()
+        )
         queue_stats_stmt = _staff_scoped_achievement_stmt(
             select(
                 func.count().filter(
@@ -355,10 +425,82 @@ async def dashboard(
                     Achievement.status == AchievementStatus.PENDING,
                     Achievement.created_at < overdue_before,
                 ).label('overdue'),
+                func.count().filter(Achievement.status == AchievementStatus.REVISION).label('revision'),
             ),
             user,
-        )
+        ).filter(live_queue_condition)
         queue_stats = (await db.execute(queue_stats_stmt)).first()
+
+        current_participants_stmt = _staff_scoped_achievement_stmt(
+            select(func.count(func.distinct(Achievement.user_id))),
+            user,
+        ).filter(live_queue_condition)
+        current_participants = int((await db.execute(current_participants_stmt)).scalar() or 0)
+
+        today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        today_stats_stmt = _staff_scoped_achievement_stmt(
+            select(
+                func.count().filter(Achievement.created_at >= today_start).label('received'),
+                func.count().filter(
+                    Achievement.updated_at >= today_start,
+                    Achievement.status.in_([
+                        AchievementStatus.APPROVED,
+                        AchievementStatus.REJECTED,
+                        AchievementStatus.REVISION,
+                    ]),
+                ).label('reviewed'),
+                func.avg(
+                    func.extract(
+                        'epoch',
+                        Achievement.updated_at - func.coalesce(Achievement.submitted_at, Achievement.created_at),
+                    )
+                ).filter(
+                    Achievement.status.in_([
+                        AchievementStatus.APPROVED,
+                        AchievementStatus.REJECTED,
+                        AchievementStatus.REVISION,
+                    ])
+                ).label('average_review_seconds'),
+            ),
+            user,
+        ).filter(live_queue_condition)
+        today_stats = (await db.execute(today_stats_stmt)).first()
+
+        continue_stmt = (
+            select(Achievement.id)
+            .join(Users, Achievement.user_id == Users.id)
+            .filter(
+                live_queue_condition,
+                Achievement.status == AchievementStatus.PENDING,
+                or_(Achievement.moderator_id == user.id, Achievement.moderator_id.is_(None)),
+            )
+            .order_by(
+                (Achievement.moderator_id == user.id).desc(),
+                Achievement.created_at.asc(),
+            )
+            .limit(1)
+        )
+        continue_stmt = _apply_staff_user_scope(continue_stmt, user)
+        continue_achievement_id = await db.scalar(continue_stmt)
+
+        moderation_category_stmt = _staff_scoped_achievement_stmt(
+            select(Achievement.category, func.count().label('count')),
+            user,
+        ).filter(
+            live_queue_condition,
+            Achievement.status == AchievementStatus.PENDING,
+        ).group_by(Achievement.category).order_by(desc('count'))
+        moderation_category_rows = (await db.execute(moderation_category_stmt)).all()
+
+        moderation_group_stmt = _staff_scoped_achievement_stmt(
+            select(Users.study_group, func.count().label('count')),
+            user,
+        ).filter(
+            live_queue_condition,
+            Achievement.status == AchievementStatus.PENDING,
+            Users.study_group.isnot(None),
+        ).group_by(Users.study_group).order_by(desc('count'))
+        moderation_group_rows = (await db.execute(moderation_group_stmt)).all()
 
         trend = None
         if period != 'all' or date_from or date_to:
@@ -519,7 +661,7 @@ async def dashboard(
             'selected_season': season,
             'available_seasons': available_seasons,
             'date_from': start_date.date().isoformat(),
-            'date_to': (end_date - timedelta(days=1)).date().isoformat(),
+            'date_to': date_to or end_date.date().isoformat(),
             'new_users_count': int(new_users_count),
             'pending_achievements': int(ach_stats.pending or 0),
             'approved_achievements': int(ach_stats.approved or 0),
@@ -529,6 +671,38 @@ async def dashboard(
                 'free': int(queue_stats.free or 0),
                 'mine': int(queue_stats.mine or 0),
                 'overdue': int(queue_stats.overdue or 0),
+                'revision': int(queue_stats.revision or 0),
+                'continue_achievement_id': continue_achievement_id,
+                'received_today': int(today_stats.received or 0),
+                'reviewed_today': int(today_stats.reviewed or 0),
+                'average_review_seconds': int(today_stats.average_review_seconds or 0),
+            },
+            'current_season': {
+                'id': live_season.id,
+                'name': live_season.name,
+                'status': live_season.status,
+                'start_at': live_season.start_at.isoformat(),
+                'submissions_open_at': live_season.submissions_open_at.isoformat(),
+                'submissions_close_at': live_season.submissions_close_at.isoformat() if live_season.submissions_close_at else None,
+                'moderation_close_at': live_season.moderation_close_at.isoformat() if live_season.moderation_close_at else None,
+                'scoring_rules_version': live_season.scoring_rules_version,
+                'participants': current_participants,
+                'documents': int(ach_stats.total or 0),
+                'approved': int(ach_stats.approved or 0),
+                'pending': int(ach_stats.pending or 0),
+            } if live_season else None,
+            'moderation_load': {
+                'categories': [
+                    {
+                        'label': row.category.value if hasattr(row.category, 'value') else str(row.category),
+                        'count': int(row.count or 0),
+                    }
+                    for row in moderation_category_rows if row.category is not None
+                ],
+                'groups': [
+                    {'label': str(row.study_group), 'count': int(row.count or 0)}
+                    for row in moderation_group_rows if row.study_group
+                ],
             },
             'trend': trend,
             'users_stats': {
@@ -724,7 +898,7 @@ async def dashboard(
         'selected_season': season,
         'available_seasons': available_seasons,
         'date_from': start_date.date().isoformat(),
-        'date_to': (end_date - timedelta(days=1)).date().isoformat(),
+        'date_to': date_to or end_date.date().isoformat(),
         'my_points': my_points,
         'gpa_bonus': int(gpa_bonus),
         'my_docs': int(doc_stats.total or 0),

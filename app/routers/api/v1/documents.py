@@ -132,7 +132,7 @@ async def list_documents(
     if not statuses and season in {'all', 'last2'}:
         effective_statuses = [item.value for item in AchievementStatus]
     elif not statuses and season not in {'current', 'all', 'last2'}:
-        effective_statuses = [AchievementStatus.ARCHIVED.value]
+        effective_statuses = [item.value for item in AchievementStatus]
 
     repo = AchievementRepository(db)
     stmt = repo.build_filter_stmt(
@@ -154,16 +154,18 @@ async def list_documents(
         owner_groups=owner_groups,
     )
 
-    if season == 'last2':
+    if season == 'current':
+        stmt = stmt.filter(Achievement.archived_season.is_(None))
+    elif season == 'last2':
         previous = available_seasons[:1]
         stmt = stmt.filter(or_(
-            Achievement.status != AchievementStatus.ARCHIVED,
+            Achievement.archived_season.is_(None),
             Achievement.archived_season.in_(previous),
         ))
     elif season not in {'current', 'all'}:
         if season not in available_seasons:
             raise HTTPException(status_code=422, detail='Неизвестный сезон.')
-        stmt = stmt.filter(Achievement.status == AchievementStatus.ARCHIVED, Achievement.archived_season == season)
+        stmt = stmt.filter(Achievement.archived_season == season)
 
     try:
         if date_from:
@@ -210,7 +212,7 @@ async def search_documents(
     )
 
     if season == 'current':
-        stmt = stmt.filter(Achievement.status != AchievementStatus.ARCHIVED)
+        stmt = stmt.filter(Achievement.archived_season.is_(None))
     elif season == 'last2':
         previous = list((await db.execute(
             select(Achievement.archived_season)
@@ -219,9 +221,9 @@ async def search_documents(
             .order_by(func.max(Achievement.updated_at).desc())
             .limit(1)
         )).scalars().all())
-        stmt = stmt.filter(or_(Achievement.status != AchievementStatus.ARCHIVED, Achievement.archived_season.in_(previous)))
+        stmt = stmt.filter(or_(Achievement.archived_season.is_(None), Achievement.archived_season.in_(previous)))
     elif season not in {'all', 'last2'}:
-        stmt = stmt.filter(Achievement.status == AchievementStatus.ARCHIVED, Achievement.archived_season == season)
+        stmt = stmt.filter(Achievement.archived_season == season)
 
     education_level, owner_courses, owner_groups = _document_zone_filter(current_user)
     if education_level is not None:

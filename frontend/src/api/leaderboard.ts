@@ -13,7 +13,11 @@ export interface LeaderboardRow {
 }
 
 export interface CompletedSeason {
+  id: number
   name: string
+  status: string
+  start_at: string
+  ended_at?: string | null
   created_at?: string | null
   participants: number
 }
@@ -23,6 +27,7 @@ export interface CompletedSeasonRow {
   user: User
   total_points: number
   is_me: boolean
+  points_breakdown?: Array<{ label: string; points: number }>
 }
 
 export interface LeaderboardResponse {
@@ -72,13 +77,5 @@ export const leaderboardApi = {
 
   getSeason(seasonName: string, params: LeaderboardParams) {
     return client.get<{ season_name: string; leaderboard: CompletedSeasonRow[] }>(`/leaderboard/seasons/${encodeURIComponent(seasonName)}`, { params })
-  },
-
-  endSeason(seasonName: string) {
-    const formData = new FormData()
-    formData.append('season_name', seasonName)
-    return client.post<{ success: boolean }>('/leaderboard/end-season', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    })
   },
 }

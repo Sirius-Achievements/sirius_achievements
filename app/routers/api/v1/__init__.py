@@ -18,6 +18,7 @@ from app.routers.api.v1.support import router as support_router
 from app.routers.api.v1.users import router as users_router
 from app.routers.api.v1.user_notes import router as user_notes_router
 from app.routers.api.v1.bug_reports import router as bug_reports_router
+from app.routers.api.v1.seasons import router as seasons_router
 
 router = APIRouter()
 router.include_router(auth_router)
@@ -32,6 +33,7 @@ router.include_router(media_router)
 router.include_router(users_router)
 router.include_router(user_notes_router)
 router.include_router(bug_reports_router)
+router.include_router(seasons_router)
 router.include_router(documents_router)
 router.include_router(support_router)
 router.include_router(moderation_router)

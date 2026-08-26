@@ -38,6 +38,7 @@ try:
     from app.models.user_token import UserToken
     from app.models.page import Page
     from app.models.season_result import SeasonResult
+    from app.models.season import Season, SeasonCategoryResult, SeasonSubmissionException
     from app.models.support_ticket import SupportTicket
     from app.models.support_message import SupportMessage
     from app.models.audit_log import AuditLog

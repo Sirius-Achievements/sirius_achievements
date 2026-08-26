@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom'
 import { achievementsApi } from '@/api/achievements'
 import { documentsApi } from '@/api/documents'
 import { pointsApi, type PointsRulesResponse } from '@/api/points'
+import { seasonsApi, type Season } from '@/api/seasons'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { PaginationFooter } from '@/components/ui/PaginationFooter'
 import { useToast } from '@/hooks/useToast'
@@ -31,6 +32,7 @@ interface AchievementFormState {
   result: string
   file: File | null
   external_url: string
+  event_date: string
 }
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024
@@ -53,6 +55,7 @@ function getDefaultForm(): AchievementFormState {
     result: Object.values(AchievementResult)[0] ?? '',
     file: null,
     external_url: '',
+    event_date: new Date().toISOString().slice(0, 10),
   }
 }
 
@@ -169,6 +172,9 @@ export function AchievementsPage() {
   const [sortBy, setSortBy] = useState('newest')
   const [season, setSeason] = useState('current')
   const [availableSeasons, setAvailableSeasons] = useState<string[]>([])
+  const [currentSeason, setCurrentSeason] = useState<Season | null>(null)
+  const [canSubmitToSeason, setCanSubmitToSeason] = useState(true)
+  const [seasonMessage, setSeasonMessage] = useState<string | null>(null)
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [isLoading, setIsLoading] = useState(true)
@@ -258,6 +264,18 @@ export function AchievementsPage() {
   }, [pointRules, showCreateModal])
 
   useEffect(() => {
+    void seasonsApi.current().then(({ data }) => {
+      setCurrentSeason(data.season)
+      setCanSubmitToSeason(data.can_submit)
+      setSeasonMessage(data.message ?? null)
+    }).catch(() => {
+      setCurrentSeason(null)
+      setCanSubmitToSeason(false)
+      setSeasonMessage('Не удалось проверить доступность текущего сезона.')
+    })
+  }, [])
+
+  useEffect(() => {
     if (!showCreateModal || createStep !== 2 || createForm.title.trim().length < 4) {
       setDuplicateSuggestions([])
       return
@@ -317,6 +335,10 @@ export function AchievementsPage() {
     }
     if (!createForm.title.trim()) {
       setError('Укажите название достижения.')
+      return
+    }
+    if (!createForm.event_date) {
+      setError('Укажите дату достижения.')
       return
     }
     setError(null)
@@ -388,6 +410,7 @@ export function AchievementsPage() {
       formData.append('category', createForm.category)
       formData.append('level', createForm.level)
       formData.append('result', createForm.result)
+      formData.append('event_date', createForm.event_date)
       if (createForm.file) {
         formData.append('file', createForm.file)
       }
@@ -479,7 +502,8 @@ export function AchievementsPage() {
         <button
           type="button"
           onClick={openCreateModal}
-          className="w-full sm:w-auto bg-indigo-600 text-white px-5 py-2.5 rounded-lg font-medium text-sm hover:bg-indigo-700 transition-colors flex items-center justify-center shadow-sm"
+          disabled={!canSubmitToSeason}
+          className="w-full sm:w-auto bg-indigo-600 text-white px-5 py-2.5 rounded-lg font-medium text-sm hover:bg-indigo-700 transition-colors flex items-center justify-center shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
         >
           <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
@@ -491,6 +515,14 @@ export function AchievementsPage() {
       {error ? (
         <div className="bg-red-50 border border-red-100 text-red-600 text-sm px-4 py-3 rounded-lg">{error}</div>
       ) : null}
+
+      {currentSeason ? (
+        <div className="rounded-xl border border-slate-200 bg-surface px-4 py-3 text-sm text-slate-600 shadow-sm">
+          <span className="font-semibold text-slate-800">{currentSeason.name}</span>
+          {currentSeason.submissions_close_at ? ` · приём до ${new Date(currentSeason.submissions_close_at).toLocaleString('ru-RU')}` : ' · без установленной даты закрытия'}
+          {!canSubmitToSeason ? <span className="ml-2 font-semibold text-red-600">{seasonMessage}</span> : null}
+        </div>
+      ) : seasonMessage ? <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{seasonMessage}</div> : null}
 
       <div className="bg-surface p-4 sm:p-5 rounded-xl border border-slate-200 shadow-sm">
         <form
@@ -1066,6 +1098,21 @@ export function AchievementsPage() {
 
                 <div>
                   <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                    Дата достижения
+                  </label>
+                  <input
+                    type="date"
+                    value={createForm.event_date}
+                    max={new Date().toISOString().slice(0, 10)}
+                    onChange={(event) => setCreateForm((current) => ({ ...current, event_date: event.target.value }))}
+                    required
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:bg-surface focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all"
+                  />
+                  <p className="mt-1 text-[10px] text-slate-400">Дата должна попадать в границы текущего сезона. Документы прошлых сезонов в новый рейтинг не переносятся.</p>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
                     Описание (необязательно)
                   </label>
                   <textarea
@@ -1141,6 +1188,7 @@ export function AchievementsPage() {
                       <dl className="mt-3 grid gap-3 text-xs sm:grid-cols-2">
                         <div><dt className="text-slate-500">Документ</dt><dd className="mt-1 font-medium text-slate-800">{createFileText || createForm.external_url || 'Не указан'}</dd></div>
                         <div><dt className="text-slate-500">Название</dt><dd className="mt-1 font-medium text-slate-800">{createForm.title}</dd></div>
+                        <div><dt className="text-slate-500">Сезон и дата</dt><dd className="mt-1 font-medium text-slate-800">{currentSeason?.name ?? '—'} · {new Date(`${createForm.event_date}T00:00:00`).toLocaleDateString('ru-RU')}</dd></div>
                         <div><dt className="text-slate-500">Направление</dt><dd className="mt-1 font-medium text-slate-800">{createForm.category}</dd></div>
                         <div><dt className="text-slate-500">Уровень и результат</dt><dd className="mt-1 font-medium text-slate-800">{createForm.level} · {createForm.result}</dd></div>
                       </dl>

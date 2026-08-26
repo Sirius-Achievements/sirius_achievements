@@ -25,8 +25,8 @@ export const usersApi = {
     return client.get<UserDetailResponse>(`/users/${id}`)
   },
 
-  search(q: string, limit = 50) {
-    return client.get<SearchSuggestionItem[]>('/users/search', { params: { q, limit } })
+  search(q: string, limit = 50, role?: string) {
+    return client.get<SearchSuggestionItem[]>('/users/search', { params: { q, limit, role } })
   },
 
   smartSearch(description: string, filters?: { education_levels?: string[]; courses?: string[]; statuses?: string[] }) {

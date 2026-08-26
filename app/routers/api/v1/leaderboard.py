@@ -14,6 +14,7 @@ from app.infrastructure.database import get_db
 from app.middlewares.api_auth_middleware import auth
 from app.models.achievement import Achievement
 from app.models.enums import AchievementCategory, AchievementStatus, UserRole, UserStatus
+from app.models.season import Season
 from app.models.season_result import SeasonResult
 from app.models.user import Users
 from app.utils.points import aggregated_gpa_bonus_expr, calculate_gpa_bonus
@@ -101,12 +102,23 @@ def _scope_signature(user: Users, education_level: str | None, course: int | Non
 
 
 def _approved_achievement_condition(season: str):
-    current = Achievement.status == AchievementStatus.APPROVED
+    current = and_(
+        Achievement.status == AchievementStatus.APPROVED,
+        Achievement.archived_season.is_(None),
+        Achievement.eligible_for_ranking.is_(True),
+    )
     archived = and_(
-        Achievement.status == AchievementStatus.ARCHIVED,
+        Achievement.archived_season.is_not(None),
+        Achievement.eligible_for_ranking.is_(True),
         or_(
-            Achievement.archived_from_status == AchievementStatus.APPROVED.value,
-            Achievement.archived_from_status.is_(None),
+            Achievement.status == AchievementStatus.APPROVED,
+            and_(
+                Achievement.status == AchievementStatus.ARCHIVED,
+                or_(
+                    Achievement.archived_from_status == AchievementStatus.APPROVED.value,
+                    Achievement.archived_from_status.is_(None),
+                ),
+            ),
         ),
     )
     if season == 'global':
@@ -311,6 +323,9 @@ async def leaderboard(
 async def completed_seasons(
     education_level: str | None = Query(None),
     course: str | None = Query(None),
+    category: str | None = Query(None),
+    categories: list[str] | None = Query(None),
+    category_logic: str = Query('or'),
     group: str | None = Query(None),
     scope: str | None = Query(None),
     current_user=Depends(auth),
@@ -324,28 +339,95 @@ async def completed_seasons(
         scoped_course = _scoped_course(current_user, course_int)
         scoped_group = group or 'all'
 
-    stmt = (
-        select(
-            SeasonResult.season_name,
-            func.max(SeasonResult.created_at).label('created_at'),
-            func.count(SeasonResult.id).label('participants'),
+    selected_categories = [item for item in (categories or ([category] if category else [])) if item and item != 'all']
+    seasons = (await db.execute(
+        select(Season)
+        .where(Season.status.in_(['published', 'archived']))
+        .order_by(Season.results_published_at.desc().nullslast(), Season.start_at.desc(), Season.id.desc())
+    )).scalars().all()
+    rows = []
+    for season in seasons:
+        fallback_category_points = await _archived_category_points_by_user(db, season) if selected_categories else {}
+        result_stmt = (
+            select(SeasonResult, Users)
+            .join(Users, Users.id == SeasonResult.user_id)
+            .filter(
+                or_(
+                    SeasonResult.season_id == season.id,
+                    and_(SeasonResult.season_id.is_(None), SeasonResult.season_name == season.name),
+                ),
+                Users.role == UserRole.STUDENT,
+                Users.status != UserStatus.DELETED,
+            )
         )
-        .join(Users, Users.id == SeasonResult.user_id)
-        .filter(Users.role == UserRole.STUDENT, Users.status != UserStatus.DELETED)
-    )
-    stmt = _apply_student_scope(stmt, current_user, scoped_education_level, scoped_course, scoped_group)
-    stmt = stmt.group_by(SeasonResult.season_name).order_by(desc('created_at'))
-    rows = (await db.execute(stmt)).all()
+        result_stmt = _apply_student_scope(
+            result_stmt,
+            current_user,
+            scoped_education_level,
+            scoped_course,
+            scoped_group,
+        )
+        result_rows = (await db.execute(result_stmt)).all()
+        if selected_categories:
+            result_rows = [
+                (result, student)
+                for result, student in result_rows
+                if _season_result_matches_categories(
+                    result,
+                    selected_categories,
+                    category_logic,
+                    fallback_category_points.get(result.user_id),
+                )
+            ]
+        rows.append((season, len(result_rows)))
     return {
         'seasons': [
             {
-                'name': name,
-                'created_at': created_at.isoformat() if created_at else None,
-                'participants': int(participants or 0),
+                'id': season.id,
+                'name': season.name,
+                'status': season.status,
+                'start_at': season.start_at.isoformat(),
+                'ended_at': (season.results_published_at or season.finalized_at or season.moderation_close_at or season.submissions_close_at).isoformat() if (season.results_published_at or season.finalized_at or season.moderation_close_at or season.submissions_close_at) else None,
+                'created_at': season.results_published_at.isoformat() if season.results_published_at else None,
+                'participants': participants,
             }
-            for name, created_at, participants in rows
+            for season, participants in rows
         ]
     }
+
+
+def _season_result_category_points(result: SeasonResult, fallback: dict[str, int] | None = None) -> dict[str, int]:
+    raw = result.category_points if isinstance(result.category_points, dict) else {}
+    normalized = {str(key): int(value or 0) for key, value in raw.items()}
+    return normalized or dict(fallback or {})
+
+
+def _season_result_matches_categories(
+    result: SeasonResult,
+    categories: list[str],
+    category_logic: str,
+    fallback: dict[str, int] | None = None,
+) -> bool:
+    points = _season_result_category_points(result, fallback)
+    matches = [points.get(item, 0) > 0 for item in categories]
+    return all(matches) if category_logic == 'and' and len(matches) > 1 else any(matches)
+
+
+async def _archived_category_points_by_user(db: AsyncSession, season: Season) -> dict[int, dict[str, int]]:
+    rows = (await db.execute(
+        select(
+            Achievement.user_id,
+            Achievement.category,
+            func.coalesce(func.sum(Achievement.points), 0).label('points'),
+        )
+        .where(_approved_achievement_condition(season.name))
+        .group_by(Achievement.user_id, Achievement.category)
+    )).all()
+    result: dict[int, dict[str, int]] = {}
+    for user_id, category, points in rows:
+        label = category.value if hasattr(category, 'value') else str(category)
+        result.setdefault(user_id, {})[label] = int(points or 0)
+    return result
 
 
 @router.get('/seasons/{season_name}')
@@ -353,6 +435,9 @@ async def completed_season_results(
     season_name: str,
     education_level: str | None = Query(None),
     course: str | None = Query(None),
+    category: str | None = Query(None),
+    categories: list[str] | None = Query(None),
+    category_logic: str = Query('or'),
     group: str | None = Query(None),
     scope: str | None = Query(None),
     current_user=Depends(auth),
@@ -366,11 +451,23 @@ async def completed_season_results(
         scoped_course = _scoped_course(current_user, course_int)
         scoped_group = group or 'all'
 
+    season = await db.scalar(
+        select(Season).where(
+            Season.name == season_name,
+            Season.status.in_(['published', 'archived']),
+        )
+    )
+    if not season:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Завершённый сезон не найден.')
+
     stmt = (
         select(SeasonResult, Users)
         .join(Users, Users.id == SeasonResult.user_id)
         .filter(
-            SeasonResult.season_name == season_name,
+            or_(
+                SeasonResult.season_id == season.id,
+                and_(SeasonResult.season_id.is_(None), SeasonResult.season_name == season.name),
+            ),
             Users.role == UserRole.STUDENT,
             Users.status != UserStatus.DELETED,
         )
@@ -378,16 +475,36 @@ async def completed_season_results(
     stmt = _apply_student_scope(stmt, current_user, scoped_education_level, scoped_course, scoped_group)
     stmt = stmt.order_by(SeasonResult.rank.asc(), SeasonResult.id.asc())
     rows = (await db.execute(stmt)).all()
+    selected_categories = [item for item in (categories or ([category] if category else [])) if item and item != 'all']
+    fallback_category_points = await _archived_category_points_by_user(db, season)
+    ranked_rows = []
+    for result, student in rows:
+        category_points = _season_result_category_points(result, fallback_category_points.get(result.user_id))
+        if selected_categories and not _season_result_matches_categories(
+            result,
+            selected_categories,
+            category_logic,
+            fallback_category_points.get(result.user_id),
+        ):
+            continue
+        points = sum(category_points.get(item, 0) for item in selected_categories) if selected_categories else int(result.points or 0)
+        ranked_rows.append((result, student, points, category_points))
+    ranked_rows.sort(key=lambda item: (-item[2], item[0].rank or 0, item[0].id))
     return {
         'season_name': season_name,
         'leaderboard': [
             {
-                'rank': result.rank,
-                'total_points': result.points,
+                'rank': rank,
+                'total_points': points,
                 'user': serialize_user(student) if student.id == current_user.id else serialize_user_public(student),
                 'is_me': student.id == current_user.id,
+                'points_breakdown': [
+                    {'label': label, 'points': value}
+                    for label, value in sorted(category_points.items(), key=lambda item: item[1], reverse=True)
+                    if value > 0 and (not selected_categories or label in selected_categories)
+                ],
             }
-            for result, student in rows
+            for rank, (result, student, points, category_points) in enumerate(ranked_rows, 1)
         ],
     }
 
@@ -449,56 +566,7 @@ async def end_season(
     if current_user.role != UserRole.SUPER_ADMIN:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Только супер-админ может завершать сезон.')
 
-    season_name = season_name.strip()
-    if len(season_name) < 3:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail='Укажите название сезона длиной не менее 3 символов.')
-    existing_season = await db.scalar(select(func.count(SeasonResult.id)).filter(SeasonResult.season_name == season_name))
-    if existing_season:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail='Сезон с таким названием уже существует.')
-
-    achievement_points = func.coalesce(func.sum(Achievement.points), 0)
-    total_points_expr = (
-        achievement_points + aggregated_gpa_bonus_expr(Users.session_gpa)
-    ).label('total_points')
-
-    stmt = (
-        select(Users.id, total_points_expr)
-        .outerjoin(Achievement, (Users.id == Achievement.user_id) & (Achievement.status == AchievementStatus.APPROVED))
-        .filter(Users.role == UserRole.STUDENT, Users.status == UserStatus.ACTIVE)
-        .group_by(Users.id)
-        .order_by(desc('total_points'))
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail='Сезон теперь закрывается поэтапно в разделе «Дашборд → Управление сезоном»: закрытие приёма, модерация, публикация.',
     )
-    rows = (await db.execute(stmt)).all()
-
-    for rank, (user_id, points) in enumerate(rows, 1):
-        if points and int(points) > 0:
-            db.add(SeasonResult(user_id=user_id, season_name=season_name, points=int(points), rank=rank))
-
-    # Closing a season freezes every document that belonged to it.  Pending,
-    # rejected and revision documents must not leak into the next moderation
-    # queue, while archived_from_status keeps their original decision intact.
-    original_status = case(
-        (Achievement.status == AchievementStatus.APPROVED, AchievementStatus.APPROVED.value),
-        (Achievement.status == AchievementStatus.REJECTED, AchievementStatus.REJECTED.value),
-        (Achievement.status == AchievementStatus.REVISION, AchievementStatus.REVISION.value),
-        else_=AchievementStatus.PENDING.value,
-    )
-    await db.execute(
-        update(Achievement)
-        .where(Achievement.status != AchievementStatus.ARCHIVED)
-        .values(
-            status=AchievementStatus.ARCHIVED,
-            archived_season=season_name,
-            archived_from_status=original_status,
-            moderator_id=None,
-        )
-    )
-    await db.execute(
-        update(Users)
-        .where(Users.role == UserRole.STUDENT)
-        .values(session_gpa=None)
-    )
-    await db.commit()
-    await invalidate_scoreboard_caches()
-
-    return {'success': True}

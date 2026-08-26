@@ -1,6 +1,8 @@
 ﻿from __future__ import annotations
 
 import os
+from datetime import date, datetime, timezone
+from hashlib import sha256
 from math import ceil
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
@@ -12,8 +14,15 @@ from app.infrastructure.database import get_db
 from app.middlewares.api_auth_middleware import auth
 from app.models.achievement import Achievement
 from app.models.enums import AchievementCategory, AchievementLevel, AchievementResult, AchievementStatus, UserStatus
+from app.models.season import Season
 from app.repositories.admin.achievement_repository import AchievementRepository
 from app.services.admin.achievement_service import AchievementService
+from app.services.season_service import (
+    SeasonRuleError,
+    ensure_revision_allowed,
+    get_active_submission_season,
+    get_live_season,
+)
 from app.utils.rate_limiter import rate_limiter
 from app.utils.search import escape_like
 
@@ -23,6 +32,14 @@ router = APIRouter(prefix='/api/v1/achievements', tags=['api.v1.achievements'])
 
 
 PAGE_SIZE = 10
+
+
+async def _upload_hash(file: UploadFile | None) -> str | None:
+    if not file or not getattr(file, 'filename', None):
+        return None
+    content = await file.read()
+    await file.seek(0)
+    return sha256(content).hexdigest()
 
 
 def _ensure_account_not_deleted(current_user) -> None:
@@ -67,24 +84,24 @@ async def list_achievements(
 
     stmt = select(Achievement).filter(Achievement.user_id == current_user.id)
 
-    archived_names = list((await db.execute(
-        select(Achievement.archived_season)
-        .filter(Achievement.user_id == current_user.id, Achievement.archived_season.is_not(None))
-        .distinct()
-        .order_by(Achievement.archived_season.desc())
-    )).scalars().all())
+    archived_seasons = (await db.execute(
+        select(Season)
+        .where(Season.status.in_(['published', 'archived']))
+        .order_by(Season.start_at.desc(), Season.id.desc())
+    )).scalars().all()
+    archived_names = [item.name for item in archived_seasons]
+    archived_by_name = {item.name: item.id for item in archived_seasons}
+    live_season = await get_live_season(db)
     if season == 'current':
-        stmt = stmt.filter(Achievement.status != AchievementStatus.ARCHIVED)
+        stmt = stmt.filter(Achievement.season_id == live_season.id) if live_season else stmt.filter(Achievement.archived_season.is_(None))
     elif season == 'last2':
-        previous = archived_names[:1]
-        stmt = stmt.filter(or_(
-            Achievement.status != AchievementStatus.ARCHIVED,
-            Achievement.archived_season.in_(previous),
-        ))
+        selected_ids = ([live_season.id] if live_season else []) + [item.id for item in archived_seasons[:1]]
+        stmt = stmt.filter(Achievement.season_id.in_(selected_ids)) if selected_ids else stmt.filter(False)
     elif season != 'all':
-        if season not in archived_names:
+        selected_id = archived_by_name.get(season)
+        if not selected_id:
             raise HTTPException(status_code=422, detail='Неизвестный сезон.')
-        stmt = stmt.filter(Achievement.status == AchievementStatus.ARCHIVED, Achievement.archived_season == season)
+        stmt = stmt.filter(Achievement.season_id == selected_id)
 
     if query:
         like_term = f"%{escape_like(query)}%"
@@ -153,19 +170,20 @@ async def search_achievements(
         .filter(or_(Achievement.title.ilike(like_term), Achievement.description.ilike(like_term)))
         .limit(5)
     )
+    live_season = await get_live_season(db)
+    archived_seasons = (await db.execute(
+        select(Season).where(Season.status.in_(['published', 'archived'])).order_by(Season.start_at.desc(), Season.id.desc())
+    )).scalars().all()
     if season == 'current':
-        stmt = stmt.filter(Achievement.status != AchievementStatus.ARCHIVED)
+        stmt = stmt.filter(Achievement.season_id == live_season.id) if live_season else stmt.filter(Achievement.archived_season.is_(None))
     elif season == 'last2':
-        previous = list((await db.execute(
-            select(Achievement.archived_season)
-            .filter(Achievement.user_id == current_user.id, Achievement.archived_season.is_not(None))
-            .distinct()
-            .order_by(Achievement.archived_season.desc())
-            .limit(1)
-        )).scalars().all())
-        stmt = stmt.filter(or_(Achievement.status != AchievementStatus.ARCHIVED, Achievement.archived_season.in_(previous)))
+        selected_ids = ([live_season.id] if live_season else []) + [item.id for item in archived_seasons[:1]]
+        stmt = stmt.filter(Achievement.season_id.in_(selected_ids)) if selected_ids else stmt.filter(False)
     elif season != 'all' and season != 'last2':
-        stmt = stmt.filter(Achievement.status == AchievementStatus.ARCHIVED, Achievement.archived_season == season)
+        selected_id = next((item.id for item in archived_seasons if item.name == season), None)
+        if not selected_id:
+            raise HTTPException(status_code=422, detail='Неизвестный сезон.')
+        stmt = stmt.filter(Achievement.season_id == selected_id)
     result = await db.execute(stmt)
     achievements = result.scalars().all()
     return [{'value': item.title, 'text': item.title} for item in achievements]
@@ -180,9 +198,11 @@ async def create_achievement(
     level: str = Form(..., max_length=50),
     result: str | None = Form(None, max_length=50),
     external_url: str | None = Form(None, max_length=500),
+    event_date: date = Form(...),
     file: UploadFile | None = File(None),
     current_user=Depends(auth),
     service: AchievementService = Depends(get_service),
+    db: AsyncSession = Depends(get_db),
 ):
     _ensure_account_not_deleted(current_user)
 
@@ -208,6 +228,21 @@ async def create_achievement(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Ссылка должна начинаться с http:// или https://.')
 
     try:
+        season = await get_active_submission_season(
+            db,
+            user_id=current_user.id,
+            event_date=event_date,
+        )
+        file_hash = await _upload_hash(file if has_file else None)
+        if file_hash:
+            duplicate = await db.scalar(
+                select(Achievement.id).where(
+                    Achievement.user_id == current_user.id,
+                    Achievement.file_hash == file_hash,
+                ).limit(1)
+            )
+            if duplicate:
+                raise HTTPException(status_code=409, detail='Этот файл уже загружен. Откройте существующий документ вместо повторной отправки.')
         file_path = await service.save_file(file) if has_file else None
         create_data = {
             'user_id': current_user.id,
@@ -218,12 +253,20 @@ async def create_achievement(
             'category': resolved_category,
             'level': resolved_level,
             'status': AchievementStatus.PENDING,
+            'season_id': season.id,
+            'event_date': event_date,
+            'submitted_at': datetime.now(timezone.utc),
+            'file_hash': file_hash,
+            'eligible_for_ranking': True,
+            'season_disposition': 'eligible',
         }
         if resolved_result:
             create_data['result'] = resolved_result
 
         achievement = await service.create(create_data)
         return {'achievement': serialize_achievement(achievement)}
+    except SeasonRuleError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Не удалось загрузить документ. Проверьте файл и повторите попытку.') from exc
 
@@ -236,6 +279,7 @@ async def revise_achievement(
     file: UploadFile | None = File(None),
     current_user=Depends(auth),
     service: AchievementService = Depends(get_service),
+    db: AsyncSession = Depends(get_db),
 ):
     _ensure_account_not_deleted(current_user)
 
@@ -244,6 +288,11 @@ async def revise_achievement(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Достижение не найдено.')
     if achievement.status != AchievementStatus.REVISION:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Этот документ не требует доработки.')
+    season = await db.get(Season, achievement.season_id) if achievement.season_id else None
+    try:
+        ensure_revision_allowed(season)
+    except SeasonRuleError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 
     update_data = {
         'status': AchievementStatus.PENDING,
@@ -257,6 +306,16 @@ async def revise_achievement(
 
     try:
         if file and file.filename:
+            file_hash = await _upload_hash(file)
+            duplicate = await db.scalar(
+                select(Achievement.id).where(
+                    Achievement.user_id == current_user.id,
+                    Achievement.file_hash == file_hash,
+                    Achievement.id != achievement.id,
+                ).limit(1)
+            )
+            if duplicate:
+                raise HTTPException(status_code=409, detail='Этот файл уже использован в другом документе.')
             new_file_path = await service.save_file(file)
             old_file_full_path = os.path.join(service.upload_dir, achievement.file_path)
             if os.path.exists(old_file_full_path):
@@ -265,6 +324,8 @@ async def revise_achievement(
                 except OSError:
                     pass
             update_data['file_path'] = new_file_path
+            update_data['file_hash'] = file_hash
+        update_data['submitted_at'] = datetime.now(timezone.utc)
 
         await service.repo.update(achievement_id, update_data)
         updated = await service.repo.find(achievement_id)

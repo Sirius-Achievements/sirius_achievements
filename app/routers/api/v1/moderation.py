@@ -14,10 +14,12 @@ from app.infrastructure.database import get_db
 from app.middlewares.api_auth_middleware import auth
 from app.models.achievement import Achievement
 from app.models.enums import AchievementCategory, AchievementLevel, AchievementResult, AchievementStatus, UserRole, UserStatus
+from app.models.season import Season
 from app.repositories.admin.achievement_repository import _owners_with_all
 from app.models.user import Users
 from app.services.audit_service import log_action
 from app.services.points_calculator import calculate_points
+from app.services.season_service import SeasonRuleError, ensure_moderation_allowed, get_live_season
 from app.services.ws_manager import ws_manager
 from app.utils.access import is_in_zone
 from app.utils.cache import invalidate_scoreboard_caches
@@ -88,6 +90,14 @@ def _is_user_in_moderator_scope(current_user, target_user) -> bool:
 
 def _is_achievement_in_moderator_scope(current_user, achievement) -> bool:
     return _is_user_in_moderator_scope(current_user, getattr(achievement, 'user', None))
+
+
+async def _ensure_document_is_in_live_moderation(db: AsyncSession, achievement: Achievement) -> None:
+    season = await db.get(Season, achievement.season_id) if achievement.season_id else None
+    try:
+        ensure_moderation_allowed(season)
+    except SeasonRuleError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 
 
 @router.get('/users')
@@ -213,11 +223,16 @@ async def pending_achievements(
     limit = settings.ITEMS_PER_PAGE
     offset = (page - 1) * limit
 
+    live_season = await get_live_season(db)
+    if not live_season:
+        return {'achievements': [], 'stats': {'total_pending': 0}, 'page': page, 'total_pages': 1}
+
     stmt = (
         select(Achievement)
         .join(Users, Achievement.user_id == Users.id)
         .options(selectinload(Achievement.user))
         .filter(Achievement.status == AchievementStatus.PENDING)
+        .filter(Achievement.season_id == live_season.id)
     )
 
     stmt = _apply_moderator_scope(stmt, current_user)
@@ -312,6 +327,7 @@ async def take_achievement(
     achievement = (await db.execute(stmt)).scalars().first()
     if not achievement or achievement.status != AchievementStatus.PENDING:
         raise HTTPException(status_code=404, detail='Achievement not found or already processed')
+    await _ensure_document_is_in_live_moderation(db, achievement)
     if not _is_achievement_in_moderator_scope(current_user, achievement):
         raise HTTPException(status_code=403, detail='Access denied')
     if achievement.moderator_id and achievement.moderator_id != current_user.id:
@@ -335,6 +351,7 @@ async def release_achievement(
     achievement = (await db.execute(stmt)).scalars().first()
     if not achievement:
         raise HTTPException(status_code=404, detail='Achievement not found')
+    await _ensure_document_is_in_live_moderation(db, achievement)
     if current_user.role != UserRole.SUPER_ADMIN and achievement.moderator_id != current_user.id:
         raise HTTPException(status_code=403, detail='Access denied')
     if not _is_achievement_in_moderator_scope(current_user, achievement):
@@ -365,6 +382,7 @@ async def update_achievement_metadata(
 
     if not achievement:
         raise HTTPException(status_code=404, detail='Achievement not found')
+    await _ensure_document_is_in_live_moderation(db, achievement)
     if not _is_achievement_in_moderator_scope(current_user, achievement):
         raise HTTPException(status_code=403, detail='Access denied')
     if achievement.status != AchievementStatus.PENDING:
@@ -434,6 +452,7 @@ async def update_achievement_status(
 
     if not achievement:
         raise HTTPException(status_code=404, detail='Achievement not found')
+    await _ensure_document_is_in_live_moderation(db, achievement)
     if not _is_achievement_in_moderator_scope(current_user, achievement):
         raise HTTPException(status_code=403, detail='Access denied')
     if achievement.status != AchievementStatus.PENDING:
@@ -517,6 +536,10 @@ async def batch_update_achievements(
         )
         achievement = (await db.execute(stmt)).scalars().first()
         if not achievement or achievement.status != AchievementStatus.PENDING:
+            continue
+        try:
+            await _ensure_document_is_in_live_moderation(db, achievement)
+        except HTTPException:
             continue
         if not _is_achievement_in_moderator_scope(current_user, achievement):
             continue

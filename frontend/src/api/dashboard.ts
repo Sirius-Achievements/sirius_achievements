@@ -6,7 +6,15 @@ export interface DashboardStats {
   date_from?: string
   date_to?: string
   selected_season?: string
-  available_seasons?: Array<{ name: string; created_at?: string | null; participants: number }>
+  available_seasons?: Array<{
+    id: number
+    name: string
+    status: string
+    start_at: string
+    ended_at?: string | null
+    created_at?: string | null
+    participants: number
+  }>
   new_users_count?: number
   pending_achievements?: number
   approved_achievements?: number
@@ -57,7 +65,34 @@ export interface DashboardStats {
   category_activity?: Array<{ category: string; count: number; points: number }>
   rejected_achievements?: number
   revision_achievements?: number
-  staff_queue?: { free: number; mine: number; overdue: number }
+  staff_queue?: {
+    free: number
+    mine: number
+    overdue: number
+    revision?: number
+    continue_achievement_id?: number | null
+    received_today?: number
+    reviewed_today?: number
+    average_review_seconds?: number
+  }
+  current_season?: {
+    id: number
+    name: string
+    status: string
+    start_at: string
+    submissions_open_at: string
+    submissions_close_at?: string | null
+    moderation_close_at?: string | null
+    scoring_rules_version: string
+    participants: number
+    documents: number
+    approved: number
+    pending: number
+  } | null
+  moderation_load?: {
+    categories: Array<{ label: string; count: number }>
+    groups: Array<{ label: string; count: number }>
+  }
   trend?: { new_users: number; documents: number; approved: number } | null
   users_stats?: {
     total: number

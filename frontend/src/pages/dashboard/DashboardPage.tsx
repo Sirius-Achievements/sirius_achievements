@@ -1,26 +1,28 @@
 import Chart from 'chart.js/auto'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 
 import { dashboardApi, type DashboardStats } from '@/api/dashboard'
 import { PointsGuide } from '@/components/points/PointsGuide'
-import { ReportExportPanel } from '@/components/staff/ReportExportPanel'
+import { StaffDashboardTabs, StaffDashboardWorkspace, type StaffDashboardTab } from '@/components/dashboard/StaffDashboardWorkspace'
 import { useAuth } from '@/hooks/useAuth'
 import { formatDateTime } from '@/utils/formatDate'
 import { getErrorMessage } from '@/utils/http'
 import { courseLabel, coursesForEducationLevel, groupsForEducationLevel } from '@/utils/labels'
 
 const PERIODS = ['day', 'week', 'month', 'all'] as const
+const RANGE_PERIODS = ['day', 'week', 'month'] as const
 function normalizePeriod(value: string | null) {
   return PERIODS.includes((value ?? '') as (typeof PERIODS)[number]) ? (value as (typeof PERIODS)[number]) : 'all'
 }
 
 function periodDescription(period: string, season: string) {
   const seasonLabel = season === 'global' ? 'Глобальная статистика' : season === 'current' ? 'Текущий сезон' : `Сезон «${season}»`
-  if (period === 'day') return `${seasonLabel} · последние 24 часа`
-  if (period === 'week') return `${seasonLabel} · последние 7 дней`
-  if (period === 'month') return `${seasonLabel} · последние 30 дней`
-  return `${seasonLabel} · весь доступный период`
+  const completed = season !== 'global' && season !== 'current'
+  if (period === 'day') return `${seasonLabel} · ${completed ? 'последний день сезона' : 'последние 24 часа'}`
+  if (period === 'week') return `${seasonLabel} · ${completed ? 'последняя неделя сезона' : 'последние 7 дней'}`
+  if (period === 'month') return `${seasonLabel} · ${completed ? 'последний месяц сезона' : 'последние 30 дней'}`
+  return `${seasonLabel} · ${season === 'global' ? 'всё время' : 'весь сезон'}`
 }
 
 function statusLabel(status: string) {
@@ -55,29 +57,35 @@ export function DashboardPage() {
   const isSuperAdmin = user?.role === 'SUPER_ADMIN'
   const isDeletedAccount = user?.status === 'deleted'
   const isRejectedAccount = user?.status === 'rejected'
+  const requestedStaffTab = (searchParams.get('tab') ?? 'overview') as StaffDashboardTab
+  const allowedStaffTabs: StaffDashboardTab[] = isSuperAdmin
+    ? ['overview', 'work', 'export', 'current', 'comparison', 'management', 'system']
+    : ['overview', 'work', 'export', 'current', 'comparison']
+  const activeStaffTab: StaffDashboardTab = allowedStaffTabs.includes(requestedStaffTab) ? requestedStaffTab : 'overview'
+  const statsSeason = isStaff && activeStaffTab === 'current' ? 'current' : season
 
-  useEffect(() => {
+  const loadDashboard = useCallback(async () => {
     if (isDeletedAccount || isRejectedAccount) {
       setStats(null)
       setError(null)
       setIsLoading(false)
       return
     }
-
-    const load = async () => {
-      setIsLoading(true)
-      setError(null)
-      try {
-        const response = await dashboardApi.getStats(period, dateFrom, dateTo, season)
-        setStats(response.data)
-      } catch (loadError) {
-        setError(getErrorMessage(loadError, 'Не удалось загрузить дашборд.'))
-      } finally {
-        setIsLoading(false)
-      }
+    setIsLoading(true)
+    setError(null)
+    try {
+      const response = await dashboardApi.getStats(period, dateFrom, dateTo, statsSeason)
+      setStats(response.data)
+    } catch (loadError) {
+      setError(getErrorMessage(loadError, 'Не удалось загрузить дашборд.'))
+    } finally {
+      setIsLoading(false)
     }
-    void load()
-  }, [dateTo, dateFrom, isDeletedAccount, isRejectedAccount, period, season])
+  }, [dateFrom, dateTo, isDeletedAccount, isRejectedAccount, period, statsSeason])
+
+  useEffect(() => {
+    void loadDashboard()
+  }, [loadDashboard])
 
   useEffect(() => {
     const canvas = chartCanvasRef.current
@@ -314,6 +322,25 @@ export function DashboardPage() {
     const next = new URLSearchParams(searchParams)
     if (value === 'current') next.delete('season')
     else next.set('season', value)
+    next.set('period', 'all')
+    next.delete('date_from')
+    next.delete('date_to')
+    setSearchParams(next)
+  }
+
+  const setPeriodMode = (mode: 'all' | 'range') => {
+    if (mode === 'all') {
+      setPeriod('all')
+      return
+    }
+    if (period === 'all' && !dateFrom && !dateTo) setPeriod('month')
+  }
+
+  const setStaffTab = (value: StaffDashboardTab) => {
+    const next = new URLSearchParams(searchParams)
+    if (value === 'overview') next.delete('tab')
+    else next.set('tab', value)
+    if (value === 'current') next.delete('season')
     setSearchParams(next)
   }
 
@@ -328,9 +355,26 @@ export function DashboardPage() {
     { label: 'Загружено документов', value: `${stats?.my_docs ?? 0}` },
     { label: 'На проверке', value: `${stats?.pending_achievements ?? 0}` },
   ]
+  const hasCustomDates = Boolean(dateFrom || dateTo)
+  const periodMode = period === 'all' && !hasCustomDates ? 'all' : 'range'
+  const selectedSeasonMeta = season !== 'current' && season !== 'global'
+    ? stats?.available_seasons?.find((item) => item.name === season)
+    : null
+  const dateMin = selectedSeasonMeta?.start_at?.slice(0, 10) ?? stats?.current_season?.start_at?.slice(0, 10)
+  const dateMax = selectedSeasonMeta?.ended_at?.slice(0, 10)
+
+  if (isStaff && activeStaffTab !== 'overview') {
+    return (
+      <div className="mx-auto max-w-6xl space-y-6">
+        <StaffDashboardTabs active={activeStaffTab} isSuperAdmin={isSuperAdmin} onSelect={setStaffTab} />
+        <StaffDashboardWorkspace active={activeStaffTab} stats={stats} onRefresh={loadDashboard} />
+      </div>
+    )
+  }
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
+      {isStaff ? <StaffDashboardTabs active={activeStaffTab} isSuperAdmin={isSuperAdmin} onSelect={setStaffTab} /> : null}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 mb-2">
         <div>
           <h2 className="text-2xl font-bold text-slate-800 tracking-tight">{isStaff ? 'Обзор статистики' : 'Мой прогресс'}</h2>
@@ -348,12 +392,21 @@ export function DashboardPage() {
               ))}
             </select>
           </label>
-          <div className="grid min-h-[46px] grid-cols-4 gap-1 rounded-xl border border-slate-200 bg-surface p-1 text-sm font-medium shadow-sm">
-              {PERIODS.map((item) => (
-                <a key={item} href={`?period=${item}`} onClick={(event) => { event.preventDefault(); setPeriod(item) }} className={`flex-1 rounded-lg px-3 py-2 text-center transition-colors ${period === item && !dateFrom && !dateTo ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-50'}`}>
-                  {{ day: 'День', week: 'Неделя', month: 'Месяц', all: 'Всё время' }[item]}
-                </a>
-              ))}
+          <div className="grid min-h-[46px] grid-cols-2 gap-1 rounded-xl border border-slate-200 bg-surface p-1 text-sm font-semibold shadow-sm">
+            <button type="button" onClick={() => setPeriodMode('all')} className={`rounded-lg px-3 py-2 transition-colors ${periodMode === 'all' ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-50'}`}>
+              {season === 'global' ? 'Всё время' : 'Весь сезон'}
+            </button>
+            <button type="button" onClick={() => setPeriodMode('range')} className={`rounded-lg px-3 py-2 transition-colors ${periodMode === 'range' ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-50'}`}>
+              По отрезку
+            </button>
+          </div>
+          {periodMode === 'range' ? <>
+          <div className="grid min-h-[42px] grid-cols-3 gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1 text-xs font-semibold">
+            {RANGE_PERIODS.map((item) => (
+              <button key={item} type="button" onClick={() => setPeriod(item)} className={`rounded-lg px-3 py-2 transition-colors ${period === item && !hasCustomDates ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-surface'}`}>
+                {{ day: 'День', week: 'Неделя', month: 'Месяц' }[item]}
+              </button>
+            ))}
           </div>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <label className="flex min-h-[46px] items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 shadow-sm">
@@ -361,47 +414,28 @@ export function DashboardPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10m-11 9h12a2 2 0 002-2V7a2 2 0 00-2-2H6a2 2 0 00-2 2v11a2 2 0 002 2z" />
               </svg>
               <span className="shrink-0 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">С</span>
-              <input type="date" value={dateFrom} onChange={(event) => setDashboardDate('date_from', event.target.value)} className="w-full min-w-0 border-0 bg-transparent p-0 text-sm font-medium text-slate-700 outline-none" />
+              <input type="date" min={dateMin} max={dateMax} value={dateFrom} onChange={(event) => setDashboardDate('date_from', event.target.value)} className="w-full min-w-0 border-0 bg-transparent p-0 text-sm font-medium text-slate-700 outline-none" />
             </label>
             <label className="flex min-h-[46px] items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 shadow-sm">
               <svg className="h-4 w-4 shrink-0 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10m-11 9h12a2 2 0 002-2V7a2 2 0 00-2-2H6a2 2 0 00-2 2v11a2 2 0 002 2z" />
               </svg>
               <span className="shrink-0 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">По</span>
-              <input type="date" value={dateTo} onChange={(event) => setDashboardDate('date_to', event.target.value)} className="w-full min-w-0 border-0 bg-transparent p-0 text-sm font-medium text-slate-700 outline-none" />
+              <input type="date" min={dateMin} max={dateMax} value={dateTo} onChange={(event) => setDashboardDate('date_to', event.target.value)} className="w-full min-w-0 border-0 bg-transparent p-0 text-sm font-medium text-slate-700 outline-none" />
             </label>
           </div>
+          {selectedSeasonMeta ? <p className="px-1 text-xs text-slate-500">Отрезки считаются внутри сезона: {new Date(selectedSeasonMeta.start_at).toLocaleDateString('ru-RU')}–{selectedSeasonMeta.ended_at ? new Date(selectedSeasonMeta.ended_at).toLocaleDateString('ru-RU') : 'дата завершения не указана'}.</p> : null}
+          </> : null}
         </div>
       </div>
 
       {error ? <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">{error}</div> : null}
 
-      <PointsGuide />
+      {!isStaff ? <PointsGuide /> : null}
 
       {isStaff ? (
         <>
-          <section className="rounded-xl border border-slate-200 bg-surface p-5 shadow-sm">
-            <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
-              <div>
-                <h3 className="text-sm font-semibold text-slate-800">Рабочая очередь</h3>
-                <p className="mt-1 text-xs text-slate-500">Сначала показаны заявки, требующие реакции команды.</p>
-              </div>
-              <Link to="/moderation/achievements" className="text-xs font-semibold text-indigo-600 hover:underline">Открыть очередь →</Link>
-            </div>
-            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-              {[
-                ['Просрочено', stats?.staff_queue?.overdue ?? 0, 'Старше 48 часов', '/moderation/achievements?age=overdue'],
-                ['Свободно', stats?.staff_queue?.free ?? 0, 'Ещё не взяты в работу', '/moderation/achievements?assignment=free'],
-                ['Закреплено за мной', stats?.staff_queue?.mine ?? 0, 'Моя текущая нагрузка', '/my-work?tab=achievements'],
-              ].map(([label, value, hint, href]) => (
-                <Link key={label} to={String(href)} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 transition hover:border-indigo-300 hover:bg-indigo-50/50">
-                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</div>
-                  <div className="mt-1 text-2xl font-bold text-slate-800">{value}</div>
-                  <div className="mt-1 text-xs text-slate-500">{hint}</div>
-                </Link>
-              ))}
-            </div>
-          </section>
+          <PointsGuide />
 
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {staffCards.map((card) => (
@@ -494,8 +528,6 @@ export function DashboardPage() {
               </div>
             </div>
           ) : null}
-
-          <ReportExportPanel />
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 bg-surface p-5 rounded-xl border border-slate-200 shadow-sm"><h3 className="text-sm font-semibold text-slate-800 mb-4">Динамика загрузки достижений</h3><div className="h-64 w-full"><canvas ref={chartCanvasRef}></canvas></div></div>

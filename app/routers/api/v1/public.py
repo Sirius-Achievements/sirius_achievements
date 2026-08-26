@@ -77,33 +77,41 @@ async def public_student_profile(
 
     current_achievements_stmt = (
         select(Achievement)
-        .filter(Achievement.user_id == student_id, Achievement.status == AchievementStatus.APPROVED)
+        .filter(
+            Achievement.user_id == student_id,
+            Achievement.status == AchievementStatus.APPROVED,
+            Achievement.archived_season.is_(None),
+            Achievement.eligible_for_ranking.is_(True),
+        )
         .order_by(Achievement.created_at.desc())
     )
     current_achievements = (await db.execute(current_achievements_stmt)).scalars().all()
     season_history = await load_season_history(db, student_id)
 
     season = (season or 'current').strip()
-    archived_approved = and_(
-        Achievement.status == AchievementStatus.ARCHIVED,
-        _approved_archive_filter(),
+    preserved_approved = and_(
+        Achievement.eligible_for_ranking.is_(True),
+        or_(
+            Achievement.status == AchievementStatus.APPROVED,
+            and_(Achievement.status == AchievementStatus.ARCHIVED, _approved_archive_filter()),
+        ),
     )
     selected_names: list[str] = []
     if season == 'current':
-        selected_filter = Achievement.status == AchievementStatus.APPROVED
+        selected_filter = and_(Achievement.status == AchievementStatus.APPROVED, Achievement.archived_season.is_(None), Achievement.eligible_for_ranking.is_(True))
     elif season == 'all':
-        selected_filter = or_(Achievement.status == AchievementStatus.APPROVED, archived_approved)
+        selected_filter = preserved_approved
     elif season == 'last2':
         selected_names = [item.season_name for item in season_history[:1]]
         selected_filter = or_(
-            Achievement.status == AchievementStatus.APPROVED,
-            and_(archived_approved, Achievement.archived_season.in_(selected_names)),
+            and_(Achievement.status == AchievementStatus.APPROVED, Achievement.archived_season.is_(None), Achievement.eligible_for_ranking.is_(True)),
+            and_(preserved_approved, Achievement.archived_season.in_(selected_names)),
         )
     else:
         known_names = {item.season_name for item in season_history}
         if season not in known_names:
             raise HTTPException(status_code=422, detail='Неизвестный сезон.')
-        selected_filter = and_(archived_approved, Achievement.archived_season == season)
+        selected_filter = and_(preserved_approved, Achievement.archived_season == season)
 
     achievements_stmt = (
         select(Achievement)
@@ -121,7 +129,7 @@ async def public_student_profile(
     ).label('total_points')
     leaderboard_stmt = (
         select(Users.id, total_points_expr)
-        .outerjoin(Achievement, (Users.id == Achievement.user_id) & (Achievement.status == AchievementStatus.APPROVED))
+        .outerjoin(Achievement, (Users.id == Achievement.user_id) & (Achievement.status == AchievementStatus.APPROVED) & Achievement.archived_season.is_(None) & Achievement.eligible_for_ranking.is_(True))
         .filter(Users.role == UserRole.STUDENT, Users.status == UserStatus.ACTIVE)
         .group_by(Users.id)
         .order_by(desc('total_points'))
@@ -141,7 +149,7 @@ async def public_student_profile(
     if student.study_group:
         group_stmt = (
             select(Users.id, total_points_expr)
-            .outerjoin(Achievement, (Users.id == Achievement.user_id) & (Achievement.status == AchievementStatus.APPROVED))
+            .outerjoin(Achievement, (Users.id == Achievement.user_id) & (Achievement.status == AchievementStatus.APPROVED) & Achievement.archived_season.is_(None) & Achievement.eligible_for_ranking.is_(True))
             .filter(
                 Users.role == UserRole.STUDENT,
                 Users.status == UserStatus.ACTIVE,

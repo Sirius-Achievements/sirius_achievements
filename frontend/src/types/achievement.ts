@@ -20,6 +20,11 @@ export interface Achievement {
   rejection_reason?: string
   archived_season?: string | null
   archived_from_status?: string | null
+  season_id?: number | null
+  event_date?: string | null
+  submitted_at?: string | null
+  eligible_for_ranking?: boolean
+  season_disposition?: string | null
   moderator_id?: number
   created_at: string
   updated_at: string

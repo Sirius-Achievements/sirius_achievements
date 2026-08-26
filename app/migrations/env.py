@@ -9,6 +9,7 @@ from alembic import context
 
 from app.infrastructure.database import Base
 from app.models.season_result import SeasonResult
+from app.models.season import Season, SeasonCategoryResult, SeasonSubmissionException
 from app.models.user import Users
 from app.models.user_token import UserToken
 from app.models.page import Page

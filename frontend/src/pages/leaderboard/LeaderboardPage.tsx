@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent, type MouseEvent } from 'react'
+import { useEffect, useMemo, useState, type MouseEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 
 import {
@@ -12,7 +12,6 @@ import { ChipMultiSelect } from '@/components/staff/ChipMultiSelect'
 import { SearchAutocompleteInput, type SearchSuggestionItem } from '@/components/staff/SearchAutocompleteInput'
 import { PaginationFooter } from '@/components/ui/PaginationFooter'
 import { useAuth } from '@/hooks/useAuth'
-import { useToast } from '@/hooks/useToast'
 import { getErrorMessage } from '@/utils/http'
 import { courseLabel } from '@/utils/labels'
 import { buildMediaUrl } from '@/utils/media'
@@ -37,6 +36,15 @@ function matchesLeaderboardRow(row: LeaderboardRow, query: string) {
     `${row.user.first_name} ${row.user.last_name}`,
     `${row.user.last_name} ${row.user.first_name}`,
   ]
+    .join(' ')
+    .toLocaleLowerCase('ru-RU')
+    .includes(normalizedQuery)
+}
+
+function matchesCompletedSeasonRow(row: CompletedSeasonRow, query: string) {
+  const normalizedQuery = normalizeLeaderboardSearch(query)
+  if (!normalizedQuery) return true
+  return [row.user.first_name, row.user.last_name, `${row.user.first_name} ${row.user.last_name}`, `${row.user.last_name} ${row.user.first_name}`]
     .join(' ')
     .toLocaleLowerCase('ru-RU')
     .includes(normalizedQuery)
@@ -89,7 +97,6 @@ function ScoreBreakdown({ row, align = 'center' }: { row: LeaderboardRow; align?
 
 export function LeaderboardPage() {
   const { user } = useAuth()
-  const { pushToast } = useToast()
   const [searchParams, setSearchParams] = useSearchParams()
   const [data, setData] = useState<LeaderboardResponse | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
@@ -97,9 +104,6 @@ export function LeaderboardPage() {
   const [suggestions, setSuggestions] = useState<SearchSuggestionItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [seasonModalOpen, setSeasonModalOpen] = useState(false)
-  const [seasonName, setSeasonName] = useState('')
-  const [isEndingSeason, setIsEndingSeason] = useState(false)
   const [viewMode, setViewMode] = useState<'global' | 'current' | 'history'>('global')
   const [seasons, setSeasons] = useState<CompletedSeason[]>([])
   const [selectedSeason, setSelectedSeason] = useState('')
@@ -224,16 +228,23 @@ export function LeaderboardPage() {
   const rest = filteredLeaderboard.slice(3)
   const totalPages = getTotalPages(rest.length, LEADERBOARD_PAGE_SIZE)
   const paginatedRest = paginateItems(rest, page, LEADERBOARD_PAGE_SIZE)
+  const filteredSeasonRows = useMemo(
+    () => seasonRows.filter((row) => matchesCompletedSeasonRow(row, searchQuery)),
+    [seasonRows, searchQuery],
+  )
+  const historyTotalPages = getTotalPages(filteredSeasonRows.length, LEADERBOARD_PAGE_SIZE)
+  const paginatedSeasonRows = paginateItems(filteredSeasonRows, page, LEADERBOARD_PAGE_SIZE)
+  const activeTotalPages = viewMode === 'history' ? historyTotalPages : totalPages
 
   useEffect(() => {
     setPage(1)
-  }, [filters, searchQuery])
+  }, [filters, searchQuery, selectedSeason, viewMode])
 
   useEffect(() => {
-    if (page > totalPages) {
-      setPage(totalPages)
+    if (page > activeTotalPages) {
+      setPage(activeTotalPages)
     }
-  }, [page, totalPages])
+  }, [activeTotalPages, page])
 
   useEffect(() => {
     const trimmed = searchQuery.trim()
@@ -243,9 +254,10 @@ export function LeaderboardPage() {
     }
 
     const timeoutId = window.setTimeout(() => {
+      const source = viewMode === 'history' ? seasonRows : (data?.leaderboard ?? [])
       setSuggestions(
-        (data?.leaderboard ?? [])
-          .filter((row) => matchesLeaderboardRow(row, trimmed))
+        source
+          .filter((row) => viewMode === 'history' ? matchesCompletedSeasonRow(row as CompletedSeasonRow, trimmed) : matchesLeaderboardRow(row as LeaderboardRow, trimmed))
           .slice(0, 5)
           .map((row) => ({
             value: `${row.user.first_name} ${row.user.last_name}`,
@@ -257,7 +269,7 @@ export function LeaderboardPage() {
     return () => {
       window.clearTimeout(timeoutId)
     }
-  }, [data?.leaderboard, searchQuery])
+  }, [data?.leaderboard, searchQuery, seasonRows, viewMode])
 
   useEffect(() => {
     if (!data || searchParams.get('focus_me') !== '1') return
@@ -353,25 +365,6 @@ export function LeaderboardPage() {
     }
   }
 
-  const handleEndSeason = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    setIsEndingSeason(true)
-    setError(null)
-
-    try {
-      await leaderboardApi.endSeason(seasonName)
-      pushToast({ title: 'Сезон завершён', message: 'Рейтинг сохранён в истории.', tone: 'success' })
-      setSeasonModalOpen(false)
-      setSeasonName('')
-      const response = await leaderboardApi.get(filters)
-      setData(response.data)
-    } catch (seasonError) {
-      setError(getErrorMessage(seasonError, 'Не удалось завершить сезон.'))
-    } finally {
-      setIsEndingSeason(false)
-    }
-  }
-
   const courseOptions = data?.current_education_level && data.current_education_level !== 'all'
     ? Array.from({ length: data.course_mapping[data.current_education_level] ?? 0 }, (_, index) => String(index + 1))
     : []
@@ -411,16 +404,43 @@ export function LeaderboardPage() {
           </select>
         </div>
 
+        <div className="space-y-4 rounded-xl border border-slate-200 bg-surface p-4">
+          <SearchAutocompleteInput
+            label="Поиск участника"
+            value={searchQuery}
+            placeholder="Имя или фамилия..."
+            suggestions={suggestions}
+            onChange={setSearchQuery}
+            onSelectSuggestion={(item) => { setSearchQuery(item.value || item.text); setSuggestions([]) }}
+          />
+          <ChipMultiSelect
+            label="Направление"
+            options={data?.categories ?? []}
+            selected={categories}
+            onToggle={toggleCategory}
+            onReset={resetCategories}
+            logic={categoryLogic}
+            onLogicChange={setCategoryLogic}
+            andHint="оставить участников, у которых есть баллы во всех выбранных направлениях"
+          />
+          {isStaff ? <div className="grid gap-3 sm:grid-cols-3">
+            <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Обучение<select value={data?.current_education_level || 'all'} onChange={(event) => updateFilter('education_level', event.target.value)} className="mt-1.5 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-700"><option value="all">Все уровни</option>{data?.education_levels.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+            <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Курс<select value={String(data?.current_course ?? 0)} onChange={(event) => updateFilter('course', event.target.value)} disabled={(data?.current_education_level || 'all') === 'all'} className="mt-1.5 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-700 disabled:opacity-50"><option value="0">Все курсы</option>{courseOptions.map((item) => <option key={item} value={item}>{courseLabel(item)}</option>)}</select></label>
+            <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Группа<select value={data?.current_group || 'all'} onChange={(event) => updateFilter('group', event.target.value)} disabled={(data?.current_education_level || 'all') === 'all'} className="mt-1.5 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-700 disabled:opacity-50"><option value="all">Все группы</option>{groupOptions.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+          </div> : null}
+          <p className="text-xs text-slate-500">Места пересчитываются внутри выбранной группы и направлений; исходный итог сезона остаётся неизменным.</p>
+        </div>
+
         <div className="bg-surface rounded-xl border border-slate-200 overflow-hidden">
           {isHistoryLoading ? <div className="p-12 text-center text-sm text-slate-500">Загрузка сезона…</div> : null}
-          {!isHistoryLoading && seasonRows.length ? (
+          {!isHistoryLoading && filteredSeasonRows.length ? (
             <div className="overflow-x-auto">
               <table className="w-full text-left">
                 <thead className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-400">
                   <tr><th className="px-5 py-3">Место</th><th className="px-5 py-3">Студент</th><th className="px-5 py-3 text-right">Баллы</th></tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {seasonRows.map((row) => (
+                  {paginatedSeasonRows.map((row) => (
                     <tr key={row.user.id} className={row.is_me ? 'bg-indigo-50/50' : ''}>
                       <td className="px-5 py-3 font-semibold text-slate-500">#{row.rank}</td>
                       <td className="px-5 py-3">
@@ -435,7 +455,8 @@ export function LeaderboardPage() {
               </table>
             </div>
           ) : null}
-          {!isHistoryLoading && !seasonRows.length ? <div className="p-12 text-center text-sm text-slate-500">Для выбранного сезона результатов нет.</div> : null}
+          {!isHistoryLoading && !filteredSeasonRows.length ? <div className="p-12 text-center text-sm text-slate-500">По выбранным фильтрам участников нет.</div> : null}
+          <PaginationFooter currentPage={page} totalPages={historyTotalPages} pageSize={LEADERBOARD_PAGE_SIZE} onPageChange={setPage} className="border-t border-slate-100 px-5 py-4" />
         </div>
       </div>
     )
@@ -477,9 +498,9 @@ export function LeaderboardPage() {
                 Экспорт CSV
               </a>
               {user?.role === 'SUPER_ADMIN' ? (
-                <button type="button" onClick={() => setSeasonModalOpen(true)} className="flex-1 md:flex-none inline-flex items-center justify-center bg-indigo-600 text-white hover:bg-indigo-700 px-4 py-2.5 rounded-lg text-xs font-bold transition-colors shadow-sm">
-                  Завершить сезон
-                </button>
+                <Link to="/dashboard?tab=management" className="flex-1 md:flex-none inline-flex items-center justify-center bg-indigo-600 text-white hover:bg-indigo-700 px-4 py-2.5 rounded-lg text-xs font-bold transition-colors shadow-sm">
+                  Управление сезоном
+                </Link>
               ) : null}
             </>
           )}
@@ -492,34 +513,6 @@ export function LeaderboardPage() {
         <button type="button" onClick={() => setViewMode('history')} className="px-4 py-2 rounded-lg border border-slate-200 bg-surface text-slate-600 hover:text-indigo-600 text-xs font-bold">Завершённые сезоны{seasons.length ? ` · ${seasons.length}` : ''}</button>
       </div>
       {isStaff ? <p className="-mt-4 text-xs text-slate-400">CSV выгружается с учётом выбранных ниже уровня обучения, курса, группы и направлений.</p> : null}
-
-      {seasonModalOpen ? (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm">
-          <div className="bg-surface rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
-            <div className="p-6 text-center">
-              <div className="w-16 h-16 bg-yellow-100 text-yellow-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /></svg>
-              </div>
-              <h3 className="text-xl font-bold text-slate-800">Завершить текущий сезон?</h3>
-              <p className="text-sm text-slate-500 mt-2">Перед подтверждением проверьте последствия. Это действие необратимо.</p>
-              <ul className="mt-4 text-left text-sm text-slate-600 space-y-2 rounded-xl bg-slate-50 border border-slate-200 p-4">
-                <li>• Позиции и баллы {data?.leaderboard.length ?? 0} участников сохранятся в истории.</li>
-                <li>• Все одобренные документы перейдут в архив.</li>
-                <li>• Бонусы за средний балл будут сброшены.</li>
-                <li>• Новый текущий сезон начнётся с нулевого рейтинга.</li>
-              </ul>
-            </div>
-            <form onSubmit={handleEndSeason} className="px-6 pb-6">
-              <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2 text-left">Название прошедшего сезона</label>
-              <input value={seasonName} onChange={(event) => setSeasonName(event.target.value)} type="text" required placeholder="Например: Осенний семестр 2026" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:bg-surface focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all mb-4" />
-              <div className="flex gap-3">
-                <button type="button" onClick={() => setSeasonModalOpen(false)} className="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200 transition-colors">Отмена</button>
-                <button type="submit" disabled={isEndingSeason || seasonName.trim().length < 3} className="flex-1 py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">{isEndingSeason ? 'Сохраняем…' : 'Подтвердить'}</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      ) : null}
 
       {error ? <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">{error}</div> : null}
 
