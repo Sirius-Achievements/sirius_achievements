@@ -12,6 +12,88 @@ import { courseLabel, coursesForEducationLevel, groupsForEducationLevel } from '
 
 const PERIODS = ['day', 'week', 'month', 'all'] as const
 const RANGE_PERIODS = ['day', 'week', 'month'] as const
+
+type SeasonPickerOption = {
+  value: string
+  label: string
+  description: string
+}
+
+function SeasonPicker({ value, options, onChange }: { value: string; options: SeasonPickerOption[]; onChange: (value: string) => void }) {
+  const [isOpen, setIsOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  const selected = options.find((option) => option.value === value) ?? options[0]
+
+  useEffect(() => {
+    if (!isOpen) return
+
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setIsOpen(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsOpen(false)
+    }
+
+    document.addEventListener('mousedown', closeOnOutsideClick)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutsideClick)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [isOpen])
+
+  return (
+    <div ref={rootRef} className="season-picker">
+      <button
+        type="button"
+        className="season-picker__trigger"
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+        onClick={() => setIsOpen((current) => !current)}
+      >
+        <span className="min-w-0 text-left">
+          <span className="season-picker__value">{selected.label}</span>
+          <span className="season-picker__description">{selected.description}</span>
+        </span>
+        <svg className={`season-picker__chevron ${isOpen ? 'season-picker__chevron--open' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {isOpen ? (
+        <div className="season-picker__menu" role="listbox" aria-label="Выбор рейтинга">
+          {options.map((option) => {
+            const isSelected = option.value === value
+            return (
+              <button
+                key={option.value}
+                type="button"
+                role="option"
+                aria-selected={isSelected}
+                className={`season-picker__option ${isSelected ? 'season-picker__option--selected' : ''}`}
+                onClick={() => {
+                  onChange(option.value)
+                  setIsOpen(false)
+                }}
+              >
+                <span className="min-w-0">
+                  <span className="season-picker__option-label">{option.label}</span>
+                  <span className="season-picker__option-description">{option.description}</span>
+                </span>
+                {isSelected ? (
+                  <svg className="season-picker__check" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
+                  </svg>
+                ) : null}
+              </button>
+            )
+          })}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 function normalizePeriod(value: string | null) {
   return PERIODS.includes((value ?? '') as (typeof PERIODS)[number]) ? (value as (typeof PERIODS)[number]) : 'all'
 }
@@ -362,6 +444,15 @@ export function DashboardPage() {
     : null
   const dateMin = selectedSeasonMeta?.start_at?.slice(0, 10) ?? stats?.current_season?.start_at?.slice(0, 10)
   const dateMax = selectedSeasonMeta?.ended_at?.slice(0, 10)
+  const seasonOptions: SeasonPickerOption[] = [
+    { value: 'global', label: 'Глобальный рейтинг', description: 'Все подтверждённые баллы за всё время' },
+    { value: 'current', label: 'Текущий сезон', description: 'Результаты активного сезона' },
+    ...(stats?.available_seasons ?? []).map((item) => ({
+      value: item.name,
+      label: `Архив · ${item.name}`,
+      description: `Завершённый сезон · ${item.participants} участников`,
+    })),
+  ]
 
   if (isStaff && activeStaffTab !== 'overview') {
     return (
@@ -382,16 +473,10 @@ export function DashboardPage() {
         </div>
 
         <div className="w-full lg:max-w-[720px] space-y-2">
-          <label className="flex min-h-[46px] items-center gap-3 rounded-xl border border-slate-200 bg-surface px-3 py-2 shadow-sm">
+          <div className="flex min-h-[54px] items-center gap-3 rounded-xl border border-slate-200 bg-surface px-3 py-1.5 shadow-sm">
             <span className="shrink-0 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">Рейтинг</span>
-            <select value={season} onChange={(event) => setSeason(event.target.value)} className="w-full min-w-0 border-0 bg-transparent p-0 text-sm font-semibold text-slate-700 outline-none">
-              <option value="global">Глобально · за всё время</option>
-              <option value="current">Текущий сезон</option>
-              {(stats?.available_seasons ?? []).map((item) => (
-                <option key={item.name} value={item.name}>{item.name} · {item.participants} участников</option>
-              ))}
-            </select>
-          </label>
+            <SeasonPicker value={season} options={seasonOptions} onChange={setSeason} />
+          </div>
           <div className="grid min-h-[46px] grid-cols-2 gap-1 rounded-xl border border-slate-200 bg-surface p-1 text-sm font-semibold shadow-sm">
             <button type="button" onClick={() => setPeriodMode('all')} className={`rounded-lg px-3 py-2 transition-colors ${periodMode === 'all' ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-50'}`}>
               {season === 'global' ? 'Всё время' : 'Весь сезон'}

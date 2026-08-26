@@ -139,13 +139,17 @@ body.theme-auth-page {
     var(--theme-bg) !important;
 }
 
-html[data-theme="dark"] body.theme-shell,
-html[data-theme="dark"] body.theme-auth-page {
+html[data-theme="dark"] body.theme-shell {
   background:
     radial-gradient(circle at 18% 10%, rgba(179, 66, 48, 0.14), transparent 28%),
     radial-gradient(circle at 82% 0%, rgba(126, 46, 34, 0.1), transparent 24%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.018), rgba(255, 255, 255, 0)),
     var(--theme-bg) !important;
+}
+
+html[data-theme="dark"] body.theme-auth-page {
+  background: var(--theme-bg) !important;
+  background-image: none !important;
 }
 
 ::selection {
