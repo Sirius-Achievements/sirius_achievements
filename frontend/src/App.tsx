@@ -4,7 +4,6 @@ import { AppLayout } from '@/components/layout/AppLayout'
 import { AuthLayout } from '@/components/layout/AuthLayout'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { ToastViewport } from '@/components/ui/ToastViewport'
-import { SpaceEasterEgg } from '@/components/ui/SpaceEasterEgg'
 import { AuthProvider } from '@/contexts/AuthContext'
 import { NotificationProvider } from '@/contexts/NotificationContext'
 import { ThemeProvider } from '@/contexts/ThemeContext'
@@ -172,7 +171,6 @@ export default function App() {
               <AppRoutes />
               <ToastViewport />
               <BugReportWidget />
-              <SpaceEasterEgg />
             </BrowserRouter>
           </NotificationProvider>
         </AuthProvider>

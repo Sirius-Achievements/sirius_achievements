@@ -2,7 +2,7 @@ import hashlib
 import math
 from urllib.parse import urlsplit
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy import desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +12,7 @@ from app.infrastructure.database import get_db
 from app.middlewares.api_auth_middleware import auth, auth_optional
 from app.models.bug_report import BugReport
 from app.models.enums import UserRole
+from app.services.bug_report_notification_service import send_bug_report_notification
 from app.utils.rate_limiter import rate_limiter
 from app.utils.search import escape_like
 
@@ -73,6 +74,7 @@ def _serialize_report(report: BugReport) -> dict:
 async def create_bug_report(
     payload: BugReportPayload,
     request: Request,
+    background_tasks: BackgroundTasks,
     current_user=Depends(auth_optional),
     db: AsyncSession = Depends(get_db),
 ):
@@ -96,6 +98,21 @@ async def create_bug_report(
     db.add(report)
     await db.commit()
     await db.refresh(report)
+    reporter = None
+    if current_user:
+        full_name = " ".join(
+            part for part in (current_user.first_name, current_user.last_name) if part
+        ).strip()
+        reporter = f"{full_name or 'Пользователь'} ({current_user.email})"
+    background_tasks.add_task(
+        send_bug_report_notification,
+        report_id=report.id,
+        description=report.description,
+        page_url=report.page_url,
+        session_id=report.session_id,
+        app_version=report.app_version,
+        reporter=reporter,
+    )
     return {'id': report.id, 'created_at': report.created_at}
 
 

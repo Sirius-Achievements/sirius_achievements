@@ -103,6 +103,11 @@ class Settings:
         "MAIL_USE_STARTTLS", os.getenv("MAIL_PORT", "465") not in {"465"}
     )
     MAIL_DEV_LOG_CODES: bool = _env_bool("MAIL_DEV_LOG_CODES", False)
+    BUG_REPORT_NOTIFICATION_EMAILS: str = os.getenv("BUG_REPORT_NOTIFICATION_EMAILS", "")
+    BUG_REPORT_DASHBOARD_URL: str = os.getenv(
+        "BUG_REPORT_DASHBOARD_URL",
+        "https://sirius-achievements.ru/sirius.achievements/app/moderation/bug-reports",
+    )
 
     # ── Локальная LLM (Qwen2.5-7B-Instruct-AWQ через vLLM) ──
     LOCAL_LLM_BASE_URL: str = os.getenv("LOCAL_LLM_BASE_URL", "http://vllm:8000/v1")
