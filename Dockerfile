@@ -6,7 +6,7 @@ ENV APP_VERSION=$APP_VERSION
 WORKDIR /frontend
 
 COPY frontend/package*.json ./
-RUN npm ci
+RUN npm ci --no-audit --no-fund
 COPY frontend/ ./
 RUN npm run build
 
