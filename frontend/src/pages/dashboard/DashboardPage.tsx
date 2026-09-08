@@ -646,19 +646,25 @@ export function DashboardPage() {
                 const cohorts = stats?.cohorts ?? []
                 const courseList = allCourses.map((courseNumber) => {
                   const fromBackend = cohorts.find((c) => c.kind === 'course' && parseInt(c.education_level, 10) === courseNumber)
-                  return fromBackend ?? { education_level: courseLabel(courseNumber), kind: 'course' as const, count: 0, total: 0, pending: 0 }
+                  return {
+                    ...fromBackend,
+                    courseNumber,
+                    education_level: courseLabel(courseNumber),
+                    kind: 'course' as const,
+                    count: fromBackend?.count ?? 0,
+                    total: fromBackend?.total ?? 0,
+                    pending: fromBackend?.pending ?? 0,
+                  }
                 })
                 return courseList.length ? (
                 <div className="space-y-4">
                   {courseList.map((course) => {
-                    const courseNumber = parseInt(course.education_level, 10)
+                    const courseNumber = course.courseNumber
                     const courseTotal = course.total ?? course.count ?? 0
                     const coursePending = course.pending ?? 0
                     const backendGroups = cohorts.filter((c) => c.kind === 'group' && c.parent_course === courseNumber)
                     const configuredGroupNames = groupsForEducationLevel('Специалитет', courseNumber)
-                    const groupNamesSet = new Set<string>(configuredGroupNames)
-                    backendGroups.forEach((g) => groupNamesSet.add(g.education_level))
-                    const groupChildren = Array.from(groupNamesSet).map((name) => {
+                    const groupChildren = configuredGroupNames.map((name) => {
                       const fromBackend = backendGroups.find((g) => g.education_level === name)
                       return fromBackend ?? { education_level: name, kind: 'group' as const, parent_course: courseNumber, count: 0, total: 0, pending: 0 }
                     })
