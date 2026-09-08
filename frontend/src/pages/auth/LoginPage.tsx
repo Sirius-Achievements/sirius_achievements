@@ -50,9 +50,17 @@ export function LoginPage() {
 
   return (
     <div className="theme-auth-card w-full max-w-sm bg-surface rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8">
-      <div className="text-center mb-8">
-        <h1 className="text-3xl font-bold text-slate-800 tracking-tight">С возвращением</h1>
-        <p className="text-sm text-slate-500 mt-2">Войдите в свой аккаунт</p>
+      <div className="mb-8">
+        <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.18em] text-[var(--color-accent-strong)]">
+          Личный кабинет
+        </p>
+        <h1 className="text-3xl font-bold text-slate-800 tracking-tight">Вход в систему</h1>
+        <p className="mt-3 text-sm text-slate-500">
+          Впервые здесь?{' '}
+          <Link to="/register" className="font-semibold text-[var(--color-accent-strong)] hover:underline">
+            Регистрация
+          </Link>
+        </p>
       </div>
 
       {hasPendingVerifyEmail ? (
@@ -67,7 +75,7 @@ export function LoginPage() {
           <button
             type="button"
             onClick={() => navigate('/verify-email')}
-            className="mt-3 text-sm font-medium text-indigo-600 hover:text-indigo-800"
+            className="mt-3 text-sm font-medium text-[var(--color-accent-strong)] hover:underline"
           >
             Продолжить подтверждение
           </button>
@@ -83,7 +91,7 @@ export function LoginPage() {
           <button
             type="button"
             onClick={() => navigate('/reset-password')}
-            className="mt-3 text-sm font-medium text-indigo-600 hover:text-indigo-800"
+            className="mt-3 text-sm font-medium text-[var(--color-accent-strong)] hover:underline"
           >
             Перейти к новому паролю
           </button>
@@ -102,7 +110,7 @@ export function LoginPage() {
           <button
             type="button"
             onClick={() => navigate('/verify-code')}
-            className="mt-3 text-sm font-medium text-indigo-600 hover:text-indigo-800"
+            className="mt-3 text-sm font-medium text-[var(--color-accent-strong)] hover:underline"
           >
             Продолжить восстановление
           </button>
@@ -117,43 +125,40 @@ export function LoginPage() {
 
       <form onSubmit={handleSubmit} className="space-y-5">
         <div>
-          <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+          <label htmlFor="email" className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
             Email
           </label>
           <input
             type="email"
             name="email"
+            id="email"
+            autoComplete="username"
             required
             value={email}
             onChange={(event) => setEmail(event.target.value)}
-            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:bg-surface focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all"
+            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:bg-surface focus:ring-2 focus:ring-[var(--color-accent-soft-strong)] focus:border-[var(--color-accent)] outline-none transition-all"
           />
         </div>
 
         <div>
-          <div className="flex justify-between items-center mb-1.5">
+          <div className="mb-1.5">
             <label
               htmlFor="password"
               className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider"
             >
               Пароль
             </label>
-            <Link
-              to={forgotPasswordHref}
-              className="text-[11px] font-medium text-indigo-600 hover:text-indigo-800"
-            >
-              Забыли пароль?
-            </Link>
           </div>
           <div className="relative">
             <input
               type={showPassword ? 'text' : 'password'}
               name="password"
               id="password"
+              autoComplete="current-password"
               required
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              className="w-full px-4 py-2.5 pr-10 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:bg-surface focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all"
+              className="w-full px-4 py-2.5 pr-10 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:bg-surface focus:ring-2 focus:ring-[var(--color-accent-soft-strong)] focus:border-[var(--color-accent)] outline-none transition-all"
             />
             <button
               type="button"
@@ -200,16 +205,27 @@ export function LoginPage() {
         <button
           type="submit"
           disabled={isSubmitting}
-          className="w-full bg-indigo-600 text-white text-sm font-medium py-2.5 rounded-lg hover:bg-indigo-700 transition-colors mt-2 disabled:cursor-not-allowed disabled:opacity-70"
+          className="mt-2 w-full rounded-lg bg-[var(--color-accent)] py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[var(--color-accent-strong)] disabled:cursor-not-allowed disabled:opacity-70"
         >
           {isSubmitting ? 'Входим...' : 'Войти'}
         </button>
+
+        <div className="text-center">
+          <Link
+            to={forgotPasswordHref}
+            className="text-xs font-semibold text-[var(--color-accent-strong)] hover:underline"
+          >
+            Восстановить пароль
+          </Link>
+        </div>
       </form>
 
-      <div className="mt-6 text-center text-sm text-slate-500">
-        Нет аккаунта?{' '}
-        <Link to="/register" className="text-indigo-600 font-medium hover:underline">
-          Создать
+      <div className="mt-7 border-t border-slate-200 pt-5 text-center text-xs leading-relaxed text-slate-400">
+        <Link
+          to="/privacy"
+          className="font-medium text-[var(--color-text-muted)] hover:text-[var(--color-accent-strong)]"
+        >
+          Политика конфиденциальности
         </Link>
       </div>
 
