@@ -664,9 +664,6 @@ export function LeaderboardPage() {
 
       {!isLoading && !filteredLeaderboard.length ? (
         <div className="text-center py-16 bg-surface rounded-xl border border-slate-200">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-slate-50 mb-3">
-            <svg className="w-6 h-6 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-          </div>
           <p className="text-sm text-slate-500">В этой лиге пока никто не набрал баллов.</p>
         </div>
       ) : null}

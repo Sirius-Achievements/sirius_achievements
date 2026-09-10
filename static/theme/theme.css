@@ -133,10 +133,7 @@ body.theme-shell {
 }
 
 body.theme-auth-page {
-  background:
-    radial-gradient(circle at 18% 10%, rgba(76, 189, 207, 0.1), transparent 30%),
-    radial-gradient(circle at 82% 0%, rgba(47, 159, 176, 0.04), transparent 28%),
-    var(--theme-bg) !important;
+  background: var(--theme-bg) !important;
 }
 
 html[data-theme="dark"] body.theme-shell {
@@ -168,9 +165,7 @@ html[data-theme="dark"] ::selection {
 }
 
 html[data-theme="dark"] .theme-auth-card {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.025), rgba(255, 255, 255, 0)),
-    var(--theme-surface) !important;
+  background: var(--theme-surface) !important;
   border-color: var(--theme-border) !important;
   box-shadow: var(--theme-shadow) !important;
 }
